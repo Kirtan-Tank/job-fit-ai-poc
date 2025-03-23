@@ -21,9 +21,7 @@ PINECONE_API_KEY = st.secrets["general"]["PINECONE_API_KEY"]
 PINECONE_ENV = st.secrets["general"]["PINECONE_ENV"]
 
 INDEX_NAME = "job-fit-index"
-# Previously used model:
-# MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
-# Now switching to a different model:
+# Using the alternative model:
 MODEL_NAME = "sentence-transformers/all-mpnet-base-v2"  # New model for embeddings
 
 # Initialize Pinecone using the new SDK pattern.
@@ -32,12 +30,10 @@ spec = ServerlessSpec(cloud="aws", region=PINECONE_ENV)
 
 # Create the index if it doesn't exist.
 if INDEX_NAME not in pc.list_indexes().names():
-    # For the chosen model, the embedding dimension is assumed to be 384.
-    # (Make sure that the selected model's output dimension matches; "all-mpnet-base-v2" returns 768-d embeddings.
-    # Adjust the dimension below if needed.)
+    # "all-mpnet-base-v2" returns 768-d embeddings.
     pc.create_index(
         name=INDEX_NAME,
-        dimension=768,  # Update dimension if needed
+        dimension=768,  # Update dimension accordingly
         metric="cosine",  # Using cosine similarity
         spec=spec
     )
@@ -94,13 +90,21 @@ def get_embedding(text: str) -> np.ndarray:
     Uses the Hugging Face InferenceClient to perform feature extraction,
     returning an embedding vector for the input text.
     This method caches the result to avoid repeated API calls.
+    It ensures the returned embedding is a list-like structure.
     """
     client = InferenceClient(api_key=HF_API_KEY)
     try:
         # Use the feature_extraction method to get the embedding from the new model.
         result = client.feature_extraction(text, model=MODEL_NAME)
-        # Assume result is a list of lists and we want the first vector.
-        return np.array(result[0])
+        # Convert result to a numpy array.
+        embedding = np.array(result)
+        # If the result is a scalar, wrap it in a list.
+        if embedding.ndim == 0:
+            embedding = np.array([embedding])
+        # If the result is nested (ndim > 1), flatten it.
+        elif embedding.ndim > 1:
+            embedding = embedding.flatten()
+        return embedding
     except Exception as e:
         st.error(f"Error generating embedding: {e}")
         return np.array([])
@@ -116,7 +120,9 @@ def upsert_resume(resume_id: str, resume_emb: np.ndarray):
     """
     Upserts the resume embedding into the Pinecone index.
     """
-    index.upsert(vectors=[(resume_id, resume_emb.tolist())])
+    # Ensure the vector is provided as a list.
+    vector = resume_emb.tolist()
+    index.upsert(vectors=[(resume_id, vector)])
 
 def query_index(query_emb: np.ndarray, top_k: int = 1):
     """
