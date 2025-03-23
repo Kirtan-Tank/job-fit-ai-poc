@@ -9,7 +9,7 @@ import io
 # Configuration and Initialization
 # -----------------------------------------------------------------------------
 # Retrieve API keys and environment from Streamlit secrets.
-# Ensure your .streamlit/secrets.toml has something like:
+# Your .streamlit/secrets.toml should look like:
 #
 # [general]
 # HF_API_KEY = "your-huggingface-api-key"
@@ -24,17 +24,16 @@ INDEX_NAME = "job-fit-index"
 MODEL_URL = "https://api-inference.huggingface.co/models/sentence-transformers/all-MiniLM-L6-v2"
 
 # Initialize Pinecone using the new SDK pattern.
-# Create a Pinecone instance and specify the serverless deployment details.
 pc = Pinecone(api_key=PINECONE_API_KEY)
 spec = ServerlessSpec(cloud="aws", region=PINECONE_ENV)
 
 # Create the index if it doesn't exist.
 if INDEX_NAME not in pc.list_indexes().names():
-    # For the chosen model (all-MiniLM-L6-v2), the embedding dimension is 384.
+    # For the chosen model, the embedding dimension is 384.
     pc.create_index(
         name=INDEX_NAME,
         dimension=384,
-        metric="cosine",  # or 'dotproduct' depending on your preference
+        metric="cosine",  # Choose cosine similarity
         spec=spec
     )
 # Get a reference to the index.
@@ -53,8 +52,8 @@ def extract_text(file) -> str:
         return ""
     
     file_bytes = file.read()
-    file.seek(0)
-    
+    file.seek(0)  # Reset file pointer for any further use
+
     if file.name.lower().endswith(".pdf"):
         try:
             import PyPDF2
@@ -88,21 +87,34 @@ def extract_text(file) -> str:
 def get_embedding(text: str) -> np.ndarray:
     """
     Calls the Hugging Face Inference API to generate and cache the embedding for a given text.
+    Includes error handling for bad requests.
     """
     headers = {"Authorization": f"Bearer {HF_API_KEY}"}
     payload = {"inputs": text}
-    response = requests.post(MODEL_URL, headers=headers, json=payload)
-    response.raise_for_status()
-    data = response.json()
-    # Assume the model returns a list with a single embedding vector.
-    return np.array(data[0])
+    
+    try:
+        response = requests.post(MODEL_URL, headers=headers, json=payload)
+        response.raise_for_status()  # Raises an HTTPError for bad responses
+        data = response.json()
+        # Validate response format – expecting a list with one embedding vector.
+        if isinstance(data, list) and len(data) > 0:
+            return np.array(data[0])
+        else:
+            st.error("Unexpected response format from the Hugging Face API.")
+            return np.array([])
+    except requests.exceptions.HTTPError as http_err:
+        st.error(f"HTTP error when generating embedding: {http_err}\nResponse: {response.text}")
+        return np.array([])
+    except Exception as e:
+        st.error(f"An unexpected error occurred: {e}")
+        return np.array([])
 
 def compute_fit_score(emb1: np.ndarray, emb2: np.ndarray) -> float:
     """
     Computes cosine similarity between two embeddings and maps it to a percentage.
     """
     sim = cosine_similarity(emb1.reshape(1, -1), emb2.reshape(1, -1))[0][0]
-    return ((sim + 1) / 2) * 100  # Convert from [-1, 1] to [0, 100]
+    return ((sim + 1) / 2) * 100  # Convert from range [-1,1] to [0,100]
 
 def upsert_resume(resume_id: str, resume_emb: np.ndarray):
     """
@@ -121,7 +133,7 @@ def query_index(query_emb: np.ndarray, top_k: int = 1):
 # -----------------------------------------------------------------------------
 def main():
     st.title("Job Fit Score Calculator")
-    st.write("Upload a resume (or CV) and a job description document to calculate a fit score.")
+    st.write("Upload a resume (or CV) and a job description document to calculate a job fit score based on semantic similarity.")
 
     st.subheader("Upload Resume/CV")
     resume_file = st.file_uploader("Choose a PDF, DOCX, or TXT file for the Resume/CV", type=["pdf", "docx", "txt"], key="resume")
@@ -142,13 +154,18 @@ def main():
                 resume_emb = get_embedding(resume_text)
                 jd_emb = get_embedding(jd_text)
                 
+                if resume_emb.size == 0 or jd_emb.size == 0:
+                    st.error("Embedding generation failed. Please check your inputs and API configuration.")
+                    return
+                
                 fit_score = compute_fit_score(resume_emb, jd_emb)
                 st.success(f"Job Fit Score: {fit_score:.2f}%")
                 
-                # Upsert the resume embedding into Pinecone (using a fixed ID for demo purposes)
+                # Upsert the resume embedding into Pinecone (using a fixed ID for demonstration)
                 resume_id = "resume_1"
                 upsert_resume(resume_id, resume_emb)
                 
+                # Query the index using the job description embedding
                 result = query_index(jd_emb, top_k=1)
                 st.write("Pinecone Query Result:", result)
         else:
