@@ -2,6 +2,6 @@ streamlit
 requests
 numpy
 scikit-learn
-pinecone-client
+pinecone
 PyPDF2
 python-docx
