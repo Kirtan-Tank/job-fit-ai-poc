@@ -21,7 +21,10 @@ PINECONE_API_KEY = st.secrets["general"]["PINECONE_API_KEY"]
 PINECONE_ENV = st.secrets["general"]["PINECONE_ENV"]
 
 INDEX_NAME = "job-fit-index"
-MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"  # Model to use for embeddings
+# Previously used model:
+# MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+# Now switching to a different model:
+MODEL_NAME = "sentence-transformers/all-mpnet-base-v2"  # New model for embeddings
 
 # Initialize Pinecone using the new SDK pattern.
 pc = Pinecone(api_key=PINECONE_API_KEY)
@@ -29,10 +32,12 @@ spec = ServerlessSpec(cloud="aws", region=PINECONE_ENV)
 
 # Create the index if it doesn't exist.
 if INDEX_NAME not in pc.list_indexes().names():
-    # The model returns embeddings of dimension 384.
+    # For the chosen model, the embedding dimension is assumed to be 384.
+    # (Make sure that the selected model's output dimension matches; "all-mpnet-base-v2" returns 768-d embeddings.
+    # Adjust the dimension below if needed.)
     pc.create_index(
         name=INDEX_NAME,
-        dimension=384,
+        dimension=768,  # Update dimension if needed
         metric="cosine",  # Using cosine similarity
         spec=spec
     )
@@ -92,7 +97,7 @@ def get_embedding(text: str) -> np.ndarray:
     """
     client = InferenceClient(api_key=HF_API_KEY)
     try:
-        # Use the feature_extraction method to get the embedding
+        # Use the feature_extraction method to get the embedding from the new model.
         result = client.feature_extraction(text, model=MODEL_NAME)
         # Assume result is a list of lists and we want the first vector.
         return np.array(result[0])
@@ -105,7 +110,7 @@ def compute_fit_score(emb1: np.ndarray, emb2: np.ndarray) -> float:
     Computes cosine similarity between two embeddings and maps it to a percentage.
     """
     sim = cosine_similarity(emb1.reshape(1, -1), emb2.reshape(1, -1))[0][0]
-    return ((sim + 1) / 2) * 100  # Mapping from [-1,1] to [0,100]
+    return ((sim + 1) / 2) * 100  # Mapping from [-1, 1] to [0, 100]
 
 def upsert_resume(resume_id: str, resume_emb: np.ndarray):
     """
