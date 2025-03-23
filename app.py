@@ -21,19 +21,32 @@ PINECONE_API_KEY = st.secrets["general"]["PINECONE_API_KEY"]
 PINECONE_ENV = st.secrets["general"]["PINECONE_ENV"]
 
 INDEX_NAME = "job-fit-index"
-# Using the alternative model:
-MODEL_NAME = "sentence-transformers/all-mpnet-base-v2"  # New model for embeddings
+# Use the new model:
+MODEL_NAME = "sentence-transformers/all-mpnet-base-v2"  # Returns 768-d embeddings
+DESIRED_DIMENSION = 768  # Update to the correct dimension for the chosen model
 
 # Initialize Pinecone using the new SDK pattern.
 pc = Pinecone(api_key=PINECONE_API_KEY)
 spec = ServerlessSpec(cloud="aws", region=PINECONE_ENV)
 
-# Create the index if it doesn't exist.
-if INDEX_NAME not in pc.list_indexes().names():
-    # "all-mpnet-base-v2" returns 768-d embeddings.
+# Check if the index exists and if its dimension matches.
+existing_indexes = pc.list_indexes().names()
+if INDEX_NAME in existing_indexes:
+    # Get index details
+    desc = pc.describe_index(INDEX_NAME)
+    if desc.dimension != DESIRED_DIMENSION:
+        st.warning(f"Index dimension ({desc.dimension}) does not match desired dimension ({DESIRED_DIMENSION}). Recreating index.")
+        pc.delete_index(INDEX_NAME)
+        pc.create_index(
+            name=INDEX_NAME,
+            dimension=DESIRED_DIMENSION,
+            metric="cosine",  # Using cosine similarity
+            spec=spec
+        )
+else:
     pc.create_index(
         name=INDEX_NAME,
-        dimension=768,  # Update dimension accordingly
+        dimension=DESIRED_DIMENSION,
         metric="cosine",  # Using cosine similarity
         spec=spec
     )
@@ -90,21 +103,12 @@ def get_embedding(text: str) -> np.ndarray:
     Uses the Hugging Face InferenceClient to perform feature extraction,
     returning an embedding vector for the input text.
     This method caches the result to avoid repeated API calls.
-    It ensures the returned embedding is a list-like structure.
     """
     client = InferenceClient(api_key=HF_API_KEY)
     try:
-        # Use the feature_extraction method to get the embedding from the new model.
         result = client.feature_extraction(text, model=MODEL_NAME)
-        # Convert result to a numpy array.
-        embedding = np.array(result)
-        # If the result is a scalar, wrap it in a list.
-        if embedding.ndim == 0:
-            embedding = np.array([embedding])
-        # If the result is nested (ndim > 1), flatten it.
-        elif embedding.ndim > 1:
-            embedding = embedding.flatten()
-        return embedding
+        # Assume result is a list of lists and we want the first vector.
+        return np.array(result[0])
     except Exception as e:
         st.error(f"Error generating embedding: {e}")
         return np.array([])
@@ -120,9 +124,7 @@ def upsert_resume(resume_id: str, resume_emb: np.ndarray):
     """
     Upserts the resume embedding into the Pinecone index.
     """
-    # Ensure the vector is provided as a list.
-    vector = resume_emb.tolist()
-    index.upsert(vectors=[(resume_id, vector)])
+    index.upsert(vectors=[(resume_id, resume_emb.tolist())])
 
 def query_index(query_emb: np.ndarray, top_k: int = 1):
     """
