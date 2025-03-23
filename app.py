@@ -9,7 +9,7 @@ import io
 # Configuration and Initialization
 # -----------------------------------------------------------------------------
 # Retrieve API keys and environment from Streamlit secrets.
-# Your .streamlit/secrets.toml should look like:
+# Your .streamlit/secrets.toml should contain:
 #
 # [general]
 # HF_API_KEY = "your-huggingface-api-key"
@@ -33,7 +33,7 @@ if INDEX_NAME not in pc.list_indexes().names():
     pc.create_index(
         name=INDEX_NAME,
         dimension=384,
-        metric="cosine",  # Choose cosine similarity
+        metric="cosine",  # Using cosine similarity
         spec=spec
     )
 # Get a reference to the index.
@@ -52,8 +52,8 @@ def extract_text(file) -> str:
         return ""
     
     file_bytes = file.read()
-    file.seek(0)  # Reset file pointer for any further use
-
+    file.seek(0)  # Reset file pointer for further use
+    
     if file.name.lower().endswith(".pdf"):
         try:
             import PyPDF2
@@ -87,16 +87,17 @@ def extract_text(file) -> str:
 def get_embedding(text: str) -> np.ndarray:
     """
     Calls the Hugging Face Inference API to generate and cache the embedding for a given text.
-    Includes error handling for bad requests.
+    Here, we explicitly set the task to "feature-extraction" to get full-text embeddings.
     """
     headers = {"Authorization": f"Bearer {HF_API_KEY}"}
-    payload = {"inputs": text}
+    # Specify the task so the endpoint returns embeddings instead of expecting sentence similarity input.
+    payload = {"inputs": text, "task": "feature-extraction"}
     
     try:
         response = requests.post(MODEL_URL, headers=headers, json=payload)
-        response.raise_for_status()  # Raises an HTTPError for bad responses
+        response.raise_for_status()  # Raises HTTPError for bad responses
         data = response.json()
-        # Validate response format – expecting a list with one embedding vector.
+        # Expecting a list with one embedding vector.
         if isinstance(data, list) and len(data) > 0:
             return np.array(data[0])
         else:
@@ -114,7 +115,7 @@ def compute_fit_score(emb1: np.ndarray, emb2: np.ndarray) -> float:
     Computes cosine similarity between two embeddings and maps it to a percentage.
     """
     sim = cosine_similarity(emb1.reshape(1, -1), emb2.reshape(1, -1))[0][0]
-    return ((sim + 1) / 2) * 100  # Convert from range [-1,1] to [0,100]
+    return ((sim + 1) / 2) * 100  # Mapping from [-1, 1] to [0, 100]
 
 def upsert_resume(resume_id: str, resume_emb: np.ndarray):
     """
