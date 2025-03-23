@@ -1,9 +1,9 @@
 import streamlit as st
-import requests
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from pinecone import Pinecone, ServerlessSpec
 import io
+from huggingface_hub import InferenceClient
 
 # -----------------------------------------------------------------------------
 # Configuration and Initialization
@@ -21,7 +21,7 @@ PINECONE_API_KEY = st.secrets["general"]["PINECONE_API_KEY"]
 PINECONE_ENV = st.secrets["general"]["PINECONE_ENV"]
 
 INDEX_NAME = "job-fit-index"
-MODEL_URL = "https://api-inference.huggingface.co/models/sentence-transformers/all-MiniLM-L6-v2"
+MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"  # Model to use for embeddings
 
 # Initialize Pinecone using the new SDK pattern.
 pc = Pinecone(api_key=PINECONE_API_KEY)
@@ -29,7 +29,7 @@ spec = ServerlessSpec(cloud="aws", region=PINECONE_ENV)
 
 # Create the index if it doesn't exist.
 if INDEX_NAME not in pc.list_indexes().names():
-    # For the chosen model, the embedding dimension is 384.
+    # The model returns embeddings of dimension 384.
     pc.create_index(
         name=INDEX_NAME,
         dimension=384,
@@ -53,7 +53,7 @@ def extract_text(file) -> str:
     
     file_bytes = file.read()
     file.seek(0)  # Reset file pointer for further use
-    
+
     if file.name.lower().endswith(".pdf"):
         try:
             import PyPDF2
@@ -86,28 +86,18 @@ def extract_text(file) -> str:
 @st.cache_data(show_spinner=False)
 def get_embedding(text: str) -> np.ndarray:
     """
-    Calls the Hugging Face Inference API to generate and cache the embedding for a given text.
-    Here, we explicitly set the task to "feature-extraction" to get full-text embeddings.
+    Uses the Hugging Face InferenceClient to perform feature extraction,
+    returning an embedding vector for the input text.
+    This method caches the result to avoid repeated API calls.
     """
-    headers = {"Authorization": f"Bearer {HF_API_KEY}"}
-    # Specify the task so the endpoint returns embeddings instead of expecting sentence similarity input.
-    payload = {"inputs": text, "task": "feature-extraction"}
-    
+    client = InferenceClient(api_key=HF_API_KEY)
     try:
-        response = requests.post(MODEL_URL, headers=headers, json=payload)
-        response.raise_for_status()  # Raises HTTPError for bad responses
-        data = response.json()
-        # Expecting a list with one embedding vector.
-        if isinstance(data, list) and len(data) > 0:
-            return np.array(data[0])
-        else:
-            st.error("Unexpected response format from the Hugging Face API.")
-            return np.array([])
-    except requests.exceptions.HTTPError as http_err:
-        st.error(f"HTTP error when generating embedding: {http_err}\nResponse: {response.text}")
-        return np.array([])
+        # Use the feature_extraction method to get the embedding
+        result = client.feature_extraction(text, model=MODEL_NAME)
+        # Assume result is a list of lists and we want the first vector.
+        return np.array(result[0])
     except Exception as e:
-        st.error(f"An unexpected error occurred: {e}")
+        st.error(f"Error generating embedding: {e}")
         return np.array([])
 
 def compute_fit_score(emb1: np.ndarray, emb2: np.ndarray) -> float:
@@ -115,7 +105,7 @@ def compute_fit_score(emb1: np.ndarray, emb2: np.ndarray) -> float:
     Computes cosine similarity between two embeddings and maps it to a percentage.
     """
     sim = cosine_similarity(emb1.reshape(1, -1), emb2.reshape(1, -1))[0][0]
-    return ((sim + 1) / 2) * 100  # Mapping from [-1, 1] to [0, 100]
+    return ((sim + 1) / 2) * 100  # Mapping from [-1,1] to [0,100]
 
 def upsert_resume(resume_id: str, resume_emb: np.ndarray):
     """
