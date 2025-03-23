@@ -1,0 +1,7 @@
+streamlit
+requests
+numpy
+scikit-learn
+pinecone-client
+PyPDF2
+python-docx
