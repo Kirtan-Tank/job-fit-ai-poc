@@ -5,3 +5,4 @@ scikit-learn
 pinecone
 PyPDF2
 python-docx
+huggingface_hub
