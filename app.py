@@ -23,7 +23,7 @@ PINECONE_ENV = st.secrets["general"]["PINECONE_ENV"]
 INDEX_NAME = "job-fit-index"
 # Use the new model:
 MODEL_NAME = "sentence-transformers/all-mpnet-base-v2"  # Returns 768-d embeddings
-DESIRED_DIMENSION = 768  # Update to the correct dimension for the chosen model
+DESIRED_DIMENSION = 768  # Correct dimension for the chosen model
 
 # Initialize Pinecone using the new SDK pattern.
 pc = Pinecone(api_key=PINECONE_API_KEY)
@@ -32,7 +32,7 @@ spec = ServerlessSpec(cloud="aws", region=PINECONE_ENV)
 # Check if the index exists and if its dimension matches.
 existing_indexes = pc.list_indexes().names()
 if INDEX_NAME in existing_indexes:
-    # Get index details
+    # Get index details.
     desc = pc.describe_index(INDEX_NAME)
     if desc.dimension != DESIRED_DIMENSION:
         st.warning(f"Index dimension ({desc.dimension}) does not match desired dimension ({DESIRED_DIMENSION}). Recreating index.")
@@ -103,12 +103,26 @@ def get_embedding(text: str) -> np.ndarray:
     Uses the Hugging Face InferenceClient to perform feature extraction,
     returning an embedding vector for the input text.
     This method caches the result to avoid repeated API calls.
+    It also pools token-level embeddings if necessary to obtain a single vector.
     """
     client = InferenceClient(api_key=HF_API_KEY)
     try:
         result = client.feature_extraction(text, model=MODEL_NAME)
-        # Assume result is a list of lists and we want the first vector.
-        return np.array(result[0])
+        embedding_array = np.array(result)
+        # If the returned embedding is 2D (e.g. one embedding per token),
+        # pool (mean) across tokens to get a single vector.
+        if embedding_array.ndim == 2:
+            pooled_embedding = embedding_array.mean(axis=0)
+        elif embedding_array.ndim == 1:
+            pooled_embedding = embedding_array
+        else:
+            st.error("Unexpected embedding dimensions.")
+            return np.array([])
+        # Check that the pooled embedding is list-like.
+        if not isinstance(pooled_embedding.tolist(), list):
+            st.error("Embedding is not a list-like structure.")
+            return np.array([])
+        return pooled_embedding
     except Exception as e:
         st.error(f"Error generating embedding: {e}")
         return np.array([])
