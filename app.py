@@ -6,22 +6,22 @@ import io
 from huggingface_hub import InferenceClient
 
 # -----------------------------------------------------------------------------
-# Custom CSS for a Light, Creative Theme
+# Custom CSS for a Light, Creative Theme with a Pastel Gradient Background
 # -----------------------------------------------------------------------------
 custom_css = """
 <style>
-/* Apply a soft gradient background (light lavender to soft pink) */
-body {
-    background: linear-gradient(135deg, #f2e8ff, #ffeef9);
+/* Force a light pastel gradient background for the entire app */
+body, .stApp {
+    background: linear-gradient(135deg, #f2e8ff, #ffeef9) !important;
 }
 
-/* Main container with subtle shadow and rounded corners */
-[data-testid="stAppViewContainer"] {
-    background: transparent;
+/* Main container adjustments */
+div.block-container {
+    background: transparent !important;
     padding: 2rem;
 }
 
-/* Style the header text */
+/* Style header text */
 h1, h2, h3, h4, h5, h6 {
     color: #6a4c93;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -42,7 +42,7 @@ div.stButton > button:hover {
     background-color: #7a5aa9;
 }
 
-/* Style the file uploader to have a subtle border and rounded corners */
+/* Style the file uploader */
 div[data-testid="stFileUploader"] {
     background-color: #ffffff;
     border: 2px dashed #d1c4e9;
@@ -70,21 +70,13 @@ st.markdown(custom_css, unsafe_allow_html=True)
 # Configuration and Initialization
 # -----------------------------------------------------------------------------
 # Retrieve API keys and environment from Streamlit secrets.
-# Your .streamlit/secrets.toml should contain:
-#
-# [general]
-# HF_API_KEY = "your-huggingface-api-key"
-# PINECONE_API_KEY = "your-pinecone-api-key"
-# PINECONE_ENV = "us-east-1"  # your desired region
-#
 HF_API_KEY = st.secrets["general"]["HF_API_KEY"]
 PINECONE_API_KEY = st.secrets["general"]["PINECONE_API_KEY"]
 PINECONE_ENV = st.secrets["general"]["PINECONE_ENV"]
 
 INDEX_NAME = "job-fit-index"
-# Use the new model:
 MODEL_NAME = "sentence-transformers/all-mpnet-base-v2"  # Returns 768-d embeddings
-DESIRED_DIMENSION = 768  # Correct dimension for the chosen model
+DESIRED_DIMENSION = 768
 
 # Initialize Pinecone using the new SDK pattern.
 pc = Pinecone(api_key=PINECONE_API_KEY)
@@ -110,7 +102,6 @@ else:
         metric="cosine",
         spec=spec
     )
-# Get a reference to the index.
 index = pc.Index(INDEX_NAME)
 
 # -----------------------------------------------------------------------------
@@ -118,16 +109,10 @@ index = pc.Index(INDEX_NAME)
 # -----------------------------------------------------------------------------
 @st.cache_data(show_spinner=False)
 def extract_text(file) -> str:
-    """
-    Extracts text from an uploaded file.
-    Supports PDF, DOCX, and plain text files.
-    """
     if file is None:
         return ""
-    
     file_bytes = file.read()
-    file.seek(0)  # Reset file pointer for further use
-
+    file.seek(0)
     if file.name.lower().endswith(".pdf"):
         try:
             import PyPDF2
@@ -159,16 +144,10 @@ def extract_text(file) -> str:
 
 @st.cache_data(show_spinner=False)
 def get_embedding(text: str) -> np.ndarray:
-    """
-    Uses the Hugging Face InferenceClient to perform feature extraction,
-    returning an embedding vector for the input text.
-    Pools token-level embeddings if necessary.
-    """
     client = InferenceClient(api_key=HF_API_KEY)
     try:
         result = client.feature_extraction(text, model=MODEL_NAME)
         embedding_array = np.array(result)
-        # If the returned embedding is 2D, pool across tokens.
         if embedding_array.ndim == 2:
             pooled_embedding = embedding_array.mean(axis=0)
         elif embedding_array.ndim == 1:
@@ -185,22 +164,13 @@ def get_embedding(text: str) -> np.ndarray:
         return np.array([])
 
 def compute_fit_score(emb1: np.ndarray, emb2: np.ndarray) -> float:
-    """
-    Computes cosine similarity between two embeddings and maps it to a percentage.
-    """
     sim = cosine_similarity(emb1.reshape(1, -1), emb2.reshape(1, -1))[0][0]
     return ((sim + 1) / 2) * 100
 
 def upsert_resume(resume_id: str, resume_emb: np.ndarray):
-    """
-    Upserts the resume embedding into the Pinecone index.
-    """
     index.upsert(vectors=[(resume_id, resume_emb.tolist())])
 
 def query_index(query_emb: np.ndarray, top_k: int = 1):
-    """
-    Queries the Pinecone index with the provided embedding.
-    """
     return index.query(vector=query_emb.tolist(), top_k=top_k)
 
 # -----------------------------------------------------------------------------
@@ -221,26 +191,18 @@ def main():
             with st.spinner("Extracting text and generating embeddings..."):
                 resume_text = extract_text(resume_file)
                 jd_text = extract_text(jd_file)
-                
                 if not resume_text or not jd_text:
                     st.error("Could not extract text from one or both of the files.")
                     return
-                
                 resume_emb = get_embedding(resume_text)
                 jd_emb = get_embedding(jd_text)
-                
                 if resume_emb.size == 0 or jd_emb.size == 0:
                     st.error("Embedding generation failed. Please check your inputs and API configuration.")
                     return
-                
                 fit_score = compute_fit_score(resume_emb, jd_emb)
                 st.success(f"Job Fit Score: {fit_score:.2f}%")
-                
-                # Upsert the resume embedding into Pinecone (using a fixed ID for demonstration)
                 resume_id = "resume_1"
                 upsert_resume(resume_id, resume_emb)
-                
-                # Hide Pinecone details by default inside an expander.
                 with st.expander("Show Pinecone Query Details"):
                     result = query_index(jd_emb, top_k=1)
                     st.write(result)
