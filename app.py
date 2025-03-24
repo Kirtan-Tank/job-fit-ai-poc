@@ -109,12 +109,13 @@ else:
     st.sidebar.markdown("<span style='color: #ffffff;'>Offline mode loads the model locally. This may take a few moments.</span>", unsafe_allow_html=True)
     # In offline mode, we fix the model to a specific one.
     MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
-    with st.sidebar.spinner("Downloading offline model..."):
-        @st.cache_resource(show_spinner=False)
-        def load_offline_model() -> SentenceTransformer:
-            return SentenceTransformer(MODEL_NAME)
-        offline_model = load_offline_model()
-    st.sidebar.success("Offline model ready to use!")
+    offline_status = st.sidebar.empty()
+    offline_status.info("Downloading offline model...")
+    @st.cache_resource(show_spinner=False)
+    def load_offline_model() -> SentenceTransformer:
+        return SentenceTransformer(MODEL_NAME)
+    offline_model = load_offline_model()
+    offline_status.success("Offline model ready to use!")
 
 # -----------------------------------------------------------------------------
 # Configuration and Initialization for Pinecone
