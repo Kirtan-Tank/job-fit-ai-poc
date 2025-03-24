@@ -208,7 +208,7 @@ def query_index(query_emb: np.ndarray, top_k: int = 1):
 def main():
     st.title("Job Fit Score Calculator")
     st.write("Upload a resume (or CV) and a job description document to calculate a job fit score based on semantic similarity.")
-    st.write("Note: Model availability depends on third-party API uptime. If the selected model is unavailable, try another model from the sidebar.")
+    st.warning("Note: Model availability depends on third-party API uptime. If the selected model is unavailable, try another model from the sidebar.")
 
     st.subheader("Upload Resume/CV")
     resume_file = st.file_uploader("Choose a PDF, DOCX, or TXT file for the Resume/CV", type=["pdf", "docx", "txt"], key="resume")
