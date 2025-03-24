@@ -6,7 +6,7 @@ import io
 from huggingface_hub import InferenceClient
 
 # -----------------------------------------------------------------------------
-# Custom CSS for a Light, Creative Theme with Enhanced Readability
+# Custom CSS for a Light, Creative Theme with Enhanced Readability and Sidebar Styling
 # -----------------------------------------------------------------------------
 custom_css = """
 <style>
@@ -32,7 +32,7 @@ h1, h2, h3, h4, h5, h6 {
 /* Paragraph text styling */
 p { color: #333333; }
 
-/* Button styles with pleasant purple tone */
+/* Style buttons with pleasant purple tone */
 div.stButton > button {
     background-color: #8e6bbf;
     color: #ffffff !important;
@@ -46,7 +46,7 @@ div.stButton > button:hover {
     background-color: #7a5aa9;
 }
 
-/* File uploader styling */
+/* Style the file uploader */
 div[data-testid="stFileUploader"] {
     background-color: #ffffff;
     border: 2px dashed #a393d9;
@@ -55,7 +55,7 @@ div[data-testid="stFileUploader"] {
     color: #333333;
 }
 
-/* Expander styling */
+/* Style the expander header and content */
 .st-expanderHeader {
     background-color: #d1c4e9;
     color: #4a148c;
@@ -68,6 +68,14 @@ div[data-testid="stFileUploader"] {
     padding: 1rem;
     color: #333333;
 }
+
+/* Sidebar styling: deep purple background with light text */
+[data-testid="stSidebar"] {
+    background-color: #4a148c !important;
+}
+[data-testid="stSidebar"] * {
+    color: #ffffff !important;
+}
 </style>
 """
 st.markdown(custom_css, unsafe_allow_html=True)
@@ -75,18 +83,12 @@ st.markdown(custom_css, unsafe_allow_html=True)
 # -----------------------------------------------------------------------------
 # Configuration and Initialization
 # -----------------------------------------------------------------------------
-# Retrieve API keys and environment from Streamlit secrets.
-# Your .streamlit/secrets.toml should contain:
-# [general]
-# HF_API_KEY = "your-huggingface-api-key"
-# PINECONE_API_KEY = "your-pinecone-api-key"
-# PINECONE_ENV = "us-east-1"
 HF_API_KEY = st.secrets["general"]["HF_API_KEY"]
 PINECONE_API_KEY = st.secrets["general"]["PINECONE_API_KEY"]
 PINECONE_ENV = st.secrets["general"]["PINECONE_ENV"]
 
 INDEX_NAME = "job-fit-index"
-# Model options (displayed as Model 1, Model 2, etc.) with their corresponding model IDs.
+# Model options (displayed as Model 1, Model 2, etc.)
 model_options = {
     "Model 1": "sentence-transformers/all-MiniLM-L6-v2",
     "Model 2": "sentence-transformers/multi-qa-MiniLM-L6-cos-v1",
@@ -94,12 +96,13 @@ model_options = {
     "Model 4": "sentence-transformers/paraphrase-MiniLM-L6-v2",
     "Model 5": "sentence-transformers/all-MiniLM-L12-v2"
 }
-# Set desired dimension to 384 (all these models return 384-d embeddings).
+# Set desired dimension to 384 (all these models return 384-d embeddings)
 DESIRED_DIMENSION = 384
 
-# Let the user select a model.
+# Let the user select a model from the sidebar.
 selected_model_label = st.sidebar.selectbox(
-    "Select a model", list(model_options.keys()), help="Model availability is dependent on third-party API availability. If the selected model is temporarily unavailable, please try another."
+    "Select a model", list(model_options.keys()),
+    help="Model availability is dependent on third-party API uptime. If the selected model is temporarily unavailable, try another."
 )
 MODEL_NAME = model_options[selected_model_label]
 
@@ -181,7 +184,6 @@ def get_embedding(text: str) -> np.ndarray:
     try:
         result = client.feature_extraction(text, model=MODEL_NAME)
         embedding_array = np.array(result)
-        # If 2D (token-level embeddings), pool via mean.
         if embedding_array.ndim == 2:
             pooled_embedding = embedding_array.mean(axis=0)
         elif embedding_array.ndim == 1:
@@ -194,7 +196,6 @@ def get_embedding(text: str) -> np.ndarray:
             return np.array([])
         return pooled_embedding
     except Exception as e:
-        # Check if error message contains 503 and customize the message.
         if "503" in str(e):
             st.error("The selected model is temporarily unavailable due to third-party service issues. Please try another model or try again later.")
         else:
