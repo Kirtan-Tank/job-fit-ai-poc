@@ -6,6 +6,52 @@ import io
 from huggingface_hub import InferenceClient
 
 # -----------------------------------------------------------------------------
+# Custom CSS for light purple theme and serene hues
+# -----------------------------------------------------------------------------
+custom_css = """
+<style>
+/* Set the main background color */
+body {
+    background-color: #f7f3ff;
+}
+/* Style the main container */
+.css-1d391kg, .css-18e3th9 {
+    background-color: #f7f3ff;
+}
+/* Style headings */
+h1, h2, h3, h4, h5, h6 {
+    color: #5e3d99;
+}
+/* Style Streamlit buttons */
+div.stButton > button {
+    background-color: #a985e2;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 0.5em 1em;
+    font-size: 16px;
+}
+div.stButton > button:hover {
+    background-color: #8a6ac9;
+}
+/* Style file uploader */
+.css-1emrehy.edgvbvh3 {
+    background-color: #ffffff;
+    border: 1px solid #d3cce3;
+    border-radius: 8px;
+}
+/* Customize the expander header */
+.css-1q1n0ol.e1fqkh3o1 {
+    background-color: #d8b4f3;
+    color: #5e3d99;
+    border: none;
+    border-radius: 4px;
+}
+</style>
+"""
+st.markdown(custom_css, unsafe_allow_html=True)
+
+# -----------------------------------------------------------------------------
 # Configuration and Initialization
 # -----------------------------------------------------------------------------
 # Retrieve API keys and environment from Streamlit secrets.
@@ -109,8 +155,7 @@ def get_embedding(text: str) -> np.ndarray:
     try:
         result = client.feature_extraction(text, model=MODEL_NAME)
         embedding_array = np.array(result)
-        # If the returned embedding is 2D (e.g. one embedding per token),
-        # pool (mean) across tokens to get a single vector.
+        # If the returned embedding is 2D (e.g., one embedding per token), pool across tokens.
         if embedding_array.ndim == 2:
             pooled_embedding = embedding_array.mean(axis=0)
         elif embedding_array.ndim == 1:
@@ -118,7 +163,7 @@ def get_embedding(text: str) -> np.ndarray:
         else:
             st.error("Unexpected embedding dimensions.")
             return np.array([])
-        # Check that the pooled embedding is list-like.
+        # Ensure the pooled embedding is list-like.
         if not isinstance(pooled_embedding.tolist(), list):
             st.error("Embedding is not a list-like structure.")
             return np.array([])
@@ -183,9 +228,10 @@ def main():
                 resume_id = "resume_1"
                 upsert_resume(resume_id, resume_emb)
                 
-                # Query the index using the job description embedding
-                result = query_index(jd_emb, top_k=1)
-                st.write("Pinecone Query Result:", result)
+                # Use an expander to hide Pinecone query details by default.
+                with st.expander("Show Pinecone Query Details"):
+                    result = query_index(jd_emb, top_k=1)
+                    st.write(result)
         else:
             st.error("Please upload both a resume and a job description file.")
 
