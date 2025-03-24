@@ -6,46 +6,60 @@ import io
 from huggingface_hub import InferenceClient
 
 # -----------------------------------------------------------------------------
-# Custom CSS for light purple theme and serene hues
+# Custom CSS for an enhanced creative theme
 # -----------------------------------------------------------------------------
 custom_css = """
 <style>
-/* Set the main background color */
+/* Apply a subtle gradient background */
 body {
-    background-color: #f7f3ff;
+    background: linear-gradient(135deg, #f7f3ff, #e4d9ff);
 }
-/* Style the main container */
+
+/* Main container adjustments */
 .css-1d391kg, .css-18e3th9 {
-    background-color: #f7f3ff;
+    background: transparent;
 }
-/* Style headings */
+
+/* Heading styles */
 h1, h2, h3, h4, h5, h6 {
     color: #5e3d99;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
 }
-/* Style Streamlit buttons */
+
+/* Button styles */
 div.stButton > button {
     background-color: #a985e2;
     color: white;
     border: none;
-    border-radius: 8px;
-    padding: 0.5em 1em;
+    border-radius: 12px;
+    padding: 0.7em 1.2em;
     font-size: 16px;
+    box-shadow: 2px 2px 6px rgba(0,0,0,0.2);
 }
 div.stButton > button:hover {
     background-color: #8a6ac9;
 }
-/* Style file uploader */
+
+/* File uploader styling */
 .css-1emrehy.edgvbvh3 {
     background-color: #ffffff;
-    border: 1px solid #d3cce3;
-    border-radius: 8px;
+    border: 2px dashed #d3cce3;
+    border-radius: 12px;
+    padding: 1em;
 }
-/* Customize the expander header */
-.css-1q1n0ol.e1fqkh3o1 {
+
+/* Expander styling for Pinecone details */
+.st-expanderHeader {
     background-color: #d8b4f3;
     color: #5e3d99;
-    border: none;
-    border-radius: 4px;
+    border-radius: 8px;
+    padding: 0.5em;
+}
+.st-expanderContent {
+    background-color: #f3edf9;
+    border-radius: 8px;
+    padding: 1em;
 }
 </style>
 """
@@ -78,7 +92,6 @@ spec = ServerlessSpec(cloud="aws", region=PINECONE_ENV)
 # Check if the index exists and if its dimension matches.
 existing_indexes = pc.list_indexes().names()
 if INDEX_NAME in existing_indexes:
-    # Get index details.
     desc = pc.describe_index(INDEX_NAME)
     if desc.dimension != DESIRED_DIMENSION:
         st.warning(f"Index dimension ({desc.dimension}) does not match desired dimension ({DESIRED_DIMENSION}). Recreating index.")
@@ -86,14 +99,14 @@ if INDEX_NAME in existing_indexes:
         pc.create_index(
             name=INDEX_NAME,
             dimension=DESIRED_DIMENSION,
-            metric="cosine",  # Using cosine similarity
+            metric="cosine",
             spec=spec
         )
 else:
     pc.create_index(
         name=INDEX_NAME,
         dimension=DESIRED_DIMENSION,
-        metric="cosine",  # Using cosine similarity
+        metric="cosine",
         spec=spec
     )
 # Get a reference to the index.
@@ -112,7 +125,7 @@ def extract_text(file) -> str:
         return ""
     
     file_bytes = file.read()
-    file.seek(0)  # Reset file pointer for further use
+    file.seek(0)
 
     if file.name.lower().endswith(".pdf"):
         try:
@@ -148,14 +161,12 @@ def get_embedding(text: str) -> np.ndarray:
     """
     Uses the Hugging Face InferenceClient to perform feature extraction,
     returning an embedding vector for the input text.
-    This method caches the result to avoid repeated API calls.
-    It also pools token-level embeddings if necessary to obtain a single vector.
+    Pools token-level embeddings if necessary.
     """
     client = InferenceClient(api_key=HF_API_KEY)
     try:
         result = client.feature_extraction(text, model=MODEL_NAME)
         embedding_array = np.array(result)
-        # If the returned embedding is 2D (e.g., one embedding per token), pool across tokens.
         if embedding_array.ndim == 2:
             pooled_embedding = embedding_array.mean(axis=0)
         elif embedding_array.ndim == 1:
@@ -163,7 +174,6 @@ def get_embedding(text: str) -> np.ndarray:
         else:
             st.error("Unexpected embedding dimensions.")
             return np.array([])
-        # Ensure the pooled embedding is list-like.
         if not isinstance(pooled_embedding.tolist(), list):
             st.error("Embedding is not a list-like structure.")
             return np.array([])
@@ -177,7 +187,7 @@ def compute_fit_score(emb1: np.ndarray, emb2: np.ndarray) -> float:
     Computes cosine similarity between two embeddings and maps it to a percentage.
     """
     sim = cosine_similarity(emb1.reshape(1, -1), emb2.reshape(1, -1))[0][0]
-    return ((sim + 1) / 2) * 100  # Mapping from [-1, 1] to [0, 100]
+    return ((sim + 1) / 2) * 100
 
 def upsert_resume(resume_id: str, resume_emb: np.ndarray):
     """
@@ -228,7 +238,7 @@ def main():
                 resume_id = "resume_1"
                 upsert_resume(resume_id, resume_emb)
                 
-                # Use an expander to hide Pinecone query details by default.
+                # Hide Pinecone details by default inside an expander.
                 with st.expander("Show Pinecone Query Details"):
                     result = query_index(jd_emb, top_k=1)
                     st.write(result)
