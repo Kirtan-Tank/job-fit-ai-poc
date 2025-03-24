@@ -6,60 +6,61 @@ import io
 from huggingface_hub import InferenceClient
 
 # -----------------------------------------------------------------------------
-# Custom CSS for an enhanced creative theme
+# Custom CSS for a Light, Creative Theme
 # -----------------------------------------------------------------------------
 custom_css = """
 <style>
-/* Apply a subtle gradient background */
+/* Apply a soft gradient background (light lavender to soft pink) */
 body {
-    background: linear-gradient(135deg, #f7f3ff, #e4d9ff);
+    background: linear-gradient(135deg, #f2e8ff, #ffeef9);
 }
 
-/* Main container adjustments */
-.css-1d391kg, .css-18e3th9 {
+/* Main container with subtle shadow and rounded corners */
+[data-testid="stAppViewContainer"] {
     background: transparent;
+    padding: 2rem;
 }
 
-/* Heading styles */
+/* Style the header text */
 h1, h2, h3, h4, h5, h6 {
-    color: #5e3d99;
+    color: #6a4c93;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.05);
 }
 
-/* Button styles */
+/* Style buttons with a pleasant purple tone */
 div.stButton > button {
-    background-color: #a985e2;
-    color: white;
+    background-color: #8e6bbf;
+    color: #ffffff;
     border: none;
-    border-radius: 12px;
+    border-radius: 10px;
     padding: 0.7em 1.2em;
     font-size: 16px;
-    box-shadow: 2px 2px 6px rgba(0,0,0,0.2);
+    box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.15);
 }
 div.stButton > button:hover {
-    background-color: #8a6ac9;
+    background-color: #7a5aa9;
 }
 
-/* File uploader styling */
-.css-1emrehy.edgvbvh3 {
+/* Style the file uploader to have a subtle border and rounded corners */
+div[data-testid="stFileUploader"] {
     background-color: #ffffff;
-    border: 2px dashed #d3cce3;
-    border-radius: 12px;
-    padding: 1em;
+    border: 2px dashed #d1c4e9;
+    border-radius: 10px;
+    padding: 1rem;
 }
 
-/* Expander styling for Pinecone details */
+/* Style the expander header and content */
 .st-expanderHeader {
-    background-color: #d8b4f3;
-    color: #5e3d99;
+    background-color: #d1c4e9;
+    color: #4a148c;
     border-radius: 8px;
-    padding: 0.5em;
+    padding: 0.5rem;
 }
 .st-expanderContent {
-    background-color: #f3edf9;
+    background-color: #f3e5f5;
     border-radius: 8px;
-    padding: 1em;
+    padding: 1rem;
 }
 </style>
 """
@@ -125,7 +126,7 @@ def extract_text(file) -> str:
         return ""
     
     file_bytes = file.read()
-    file.seek(0)
+    file.seek(0)  # Reset file pointer for further use
 
     if file.name.lower().endswith(".pdf"):
         try:
@@ -167,6 +168,7 @@ def get_embedding(text: str) -> np.ndarray:
     try:
         result = client.feature_extraction(text, model=MODEL_NAME)
         embedding_array = np.array(result)
+        # If the returned embedding is 2D, pool across tokens.
         if embedding_array.ndim == 2:
             pooled_embedding = embedding_array.mean(axis=0)
         elif embedding_array.ndim == 1:
