@@ -6,13 +6,14 @@ import io
 from huggingface_hub import InferenceClient
 
 # -----------------------------------------------------------------------------
-# Custom CSS for a Light, Creative Theme with a Pastel Gradient Background
+# Custom CSS for a Light, Creative Theme with Enhanced Readability
 # -----------------------------------------------------------------------------
 custom_css = """
 <style>
-/* Force a light pastel gradient background for the entire app */
+/* Apply a soft pastel gradient background for the entire app */
 body, .stApp {
     background: linear-gradient(135deg, #f2e8ff, #ffeef9) !important;
+    color: #333333; /* Set default text color to dark grey for readability */
 }
 
 /* Main container adjustments */
@@ -21,17 +22,22 @@ div.block-container {
     padding: 2rem;
 }
 
-/* Style header text */
+/* Style header text with a darker shade for contrast */
 h1, h2, h3, h4, h5, h6 {
-    color: #6a4c93;
+    color: #4a148c !important;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.05);
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.1);
 }
 
-/* Style buttons with a pleasant purple tone */
+/* Style paragraph text */
+p {
+    color: #333333;
+}
+
+/* Style buttons with a pleasant purple tone and sufficient contrast */
 div.stButton > button {
     background-color: #8e6bbf;
-    color: #ffffff;
+    color: #ffffff !important;
     border: none;
     border-radius: 10px;
     padding: 0.7em 1.2em;
@@ -42,15 +48,16 @@ div.stButton > button:hover {
     background-color: #7a5aa9;
 }
 
-/* Style the file uploader */
+/* Style the file uploader with a clear border and darker text */
 div[data-testid="stFileUploader"] {
     background-color: #ffffff;
-    border: 2px dashed #d1c4e9;
+    border: 2px dashed #a393d9;
     border-radius: 10px;
     padding: 1rem;
+    color: #333333;
 }
 
-/* Style the expander header and content */
+/* Style the expander header and content for better readability */
 .st-expanderHeader {
     background-color: #d1c4e9;
     color: #4a148c;
@@ -61,6 +68,7 @@ div[data-testid="stFileUploader"] {
     background-color: #f3e5f5;
     border-radius: 8px;
     padding: 1rem;
+    color: #333333;
 }
 </style>
 """
@@ -69,7 +77,6 @@ st.markdown(custom_css, unsafe_allow_html=True)
 # -----------------------------------------------------------------------------
 # Configuration and Initialization
 # -----------------------------------------------------------------------------
-# Retrieve API keys and environment from Streamlit secrets.
 HF_API_KEY = st.secrets["general"]["HF_API_KEY"]
 PINECONE_API_KEY = st.secrets["general"]["PINECONE_API_KEY"]
 PINECONE_ENV = st.secrets["general"]["PINECONE_ENV"]
@@ -82,7 +89,6 @@ DESIRED_DIMENSION = 768
 pc = Pinecone(api_key=PINECONE_API_KEY)
 spec = ServerlessSpec(cloud="aws", region=PINECONE_ENV)
 
-# Check if the index exists and if its dimension matches.
 existing_indexes = pc.list_indexes().names()
 if INDEX_NAME in existing_indexes:
     desc = pc.describe_index(INDEX_NAME)
@@ -111,8 +117,10 @@ index = pc.Index(INDEX_NAME)
 def extract_text(file) -> str:
     if file is None:
         return ""
+    
     file_bytes = file.read()
     file.seek(0)
+    
     if file.name.lower().endswith(".pdf"):
         try:
             import PyPDF2
