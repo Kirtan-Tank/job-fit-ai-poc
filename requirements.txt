@@ -1,8 +1,8 @@
 streamlit
-requests
 numpy
 scikit-learn
 pinecone
 PyPDF2
 python-docx
 huggingface_hub
+sentence-transformers
