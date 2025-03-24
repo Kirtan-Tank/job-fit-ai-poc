@@ -91,11 +91,9 @@ st.markdown(custom_css, unsafe_allow_html=True)
 # -----------------------------------------------------------------------------
 # Sidebar: Mode and Model Selection
 # -----------------------------------------------------------------------------
-# Choose between Online and Offline mode.
 mode = st.sidebar.radio("Select Mode", ["Online", "Offline"])
 if mode == "Online":
     st.sidebar.markdown("<span style='color: #ffffff;'>Online mode uses the Hugging Face Inference API for embeddings.</span>", unsafe_allow_html=True)
-    # Model options for online mode.
     model_options = {
         "Model 1": "sentence-transformers/all-MiniLM-L6-v2",
         "Model 2": "sentence-transformers/multi-qa-MiniLM-L6-cos-v1",
@@ -107,7 +105,6 @@ if mode == "Online":
     MODEL_NAME = model_options[selected_model_label]
 else:
     st.sidebar.markdown("<span style='color: #ffffff;'>Offline mode loads the model locally. This may take a few moments.</span>", unsafe_allow_html=True)
-    # In offline mode, we fix the model to a specific one.
     MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
     offline_status = st.sidebar.empty()
     offline_status.info("Downloading offline model...")
@@ -125,10 +122,8 @@ PINECONE_API_KEY = st.secrets["general"]["PINECONE_API_KEY"]
 PINECONE_ENV = st.secrets["general"]["PINECONE_ENV"]
 
 INDEX_NAME = "job-fit-index"
-# For all these models, we set the desired dimension to 384.
 DESIRED_DIMENSION = 384
 
-# Initialize Pinecone.
 pc = Pinecone(api_key=PINECONE_API_KEY)
 spec = ServerlessSpec(cloud="aws", region=PINECONE_ENV)
 existing_indexes = pc.list_indexes().names()
@@ -232,37 +227,38 @@ def query_index(query_emb: np.ndarray, top_k: int = 1):
 # -----------------------------------------------------------------------------
 def main():
     st.title("Job Fit Score Calculator")
-    st.write("Upload a resume (or CV) and a job description document to calculate a job fit score based on semantic similarity.")
+    st.write("Upload a job description document and a resume (or CV) to calculate a job fit score based on semantic similarity.")
     st.warning("Note: Model availability depends on third-party API uptime. If the selected model is unavailable, try another model from the sidebar.")
 
-    st.subheader("Upload Resume/CV")
-    resume_file = st.file_uploader("Choose a PDF, DOCX, or TXT file for the Resume/CV", type=["pdf", "docx", "txt"], key="resume")
-    
+    # Change order: Job Description first.
     st.subheader("Upload Job Description")
     jd_file = st.file_uploader("Choose a PDF, DOCX, or TXT file for the Job Description", type=["pdf", "docx", "txt"], key="jd")
     
-    if resume_file:
-        with st.expander("Review Extracted Resume Text"):
-            st.write(extract_text(resume_file))
+    st.subheader("Upload Resume/CV")
+    resume_file = st.file_uploader("Choose a PDF, DOCX, or TXT file for the Resume/CV", type=["pdf", "docx", "txt"], key="resume")
+    
     if jd_file:
         with st.expander("Review Extracted Job Description Text"):
             st.write(extract_text(jd_file))
+    if resume_file:
+        with st.expander("Review Extracted Resume Text"):
+            st.write(extract_text(resume_file))
 
     if st.button("Calculate Fit Score"):
-        if resume_file and jd_file:
+        if jd_file and resume_file:
             with st.spinner("Extracting text and generating embeddings..."):
-                resume_text = extract_text(resume_file)
                 jd_text = extract_text(jd_file)
-                if not resume_text or not jd_text:
+                resume_text = extract_text(resume_file)
+                if not jd_text or not resume_text:
                     st.error("Could not extract text from one or both of the files.")
                     return
                 if mode == "Online":
-                    resume_emb = get_embedding_online(resume_text)
                     jd_emb = get_embedding_online(jd_text)
+                    resume_emb = get_embedding_online(resume_text)
                 else:
-                    resume_emb = get_embedding_offline(resume_text)
                     jd_emb = get_embedding_offline(jd_text)
-                if resume_emb.size == 0 or jd_emb.size == 0:
+                    resume_emb = get_embedding_offline(resume_text)
+                if jd_emb.size == 0 or resume_emb.size == 0:
                     st.error("Embedding generation failed. Please check your inputs and API configuration.")
                     return
                 fit_score = compute_fit_score(resume_emb, jd_emb)
@@ -273,7 +269,7 @@ def main():
                     result = query_index(jd_emb, top_k=1)
                     st.write(result)
         else:
-            st.error("Please upload both a resume and a job description file.")
+            st.error("Please upload both a job description and a resume (or CV).")
 
 if __name__ == "__main__":
     main()
