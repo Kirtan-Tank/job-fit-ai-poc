@@ -6,7 +6,7 @@ import io
 from huggingface_hub import InferenceClient
 
 # -----------------------------------------------------------------------------
-# Custom CSS for a Light, Creative Theme with Enhanced Readability and Sidebar Styling
+# Custom CSS for a Light, Creative Theme with Enhanced Readability and Dark Sidebar
 # -----------------------------------------------------------------------------
 custom_css = """
 <style>
@@ -69,9 +69,9 @@ div[data-testid="stFileUploader"] {
     color: #333333;
 }
 
-/* Sidebar styling: deep purple background with light text */
+/* Sidebar styling: very dark purple background with light text */
 [data-testid="stSidebar"] {
-    background-color: #4a148c !important;
+    background-color: #2e003e !important;
 }
 [data-testid="stSidebar"] * {
     color: #ffffff !important;
@@ -88,7 +88,7 @@ PINECONE_API_KEY = st.secrets["general"]["PINECONE_API_KEY"]
 PINECONE_ENV = st.secrets["general"]["PINECONE_ENV"]
 
 INDEX_NAME = "job-fit-index"
-# Model options (displayed as Model 1, Model 2, etc.)
+# Model options (displayed as Model 1, Model 2, etc.) with their corresponding model IDs.
 model_options = {
     "Model 1": "sentence-transformers/all-MiniLM-L6-v2",
     "Model 2": "sentence-transformers/multi-qa-MiniLM-L6-cos-v1",
@@ -96,14 +96,13 @@ model_options = {
     "Model 4": "sentence-transformers/paraphrase-MiniLM-L6-v2",
     "Model 5": "sentence-transformers/all-MiniLM-L12-v2"
 }
-# Set desired dimension to 384 (all these models return 384-d embeddings)
+# Set desired dimension to 384 (all these models return 384-d embeddings).
 DESIRED_DIMENSION = 384
 
+# Sidebar: Display custom help text with light text.
+st.sidebar.markdown("<span style='color: #ffffff;'>Model availability is dependent on third-party API uptime. If the selected model is temporarily unavailable, please try another.</span>", unsafe_allow_html=True)
 # Let the user select a model from the sidebar.
-selected_model_label = st.sidebar.selectbox(
-    "Select a model", list(model_options.keys()),
-    help="Model availability is dependent on third-party API uptime. If the selected model is temporarily unavailable, try another."
-)
+selected_model_label = st.sidebar.selectbox("Select a model", list(model_options.keys()))
 MODEL_NAME = model_options[selected_model_label]
 
 # Initialize Pinecone using the new SDK pattern.
@@ -136,10 +135,6 @@ index = pc.Index(INDEX_NAME)
 # -----------------------------------------------------------------------------
 @st.cache_data(show_spinner=False)
 def extract_text(file) -> str:
-    """
-    Extracts text from an uploaded file.
-    Supports PDF, DOCX, and plain text files.
-    """
     if file is None:
         return ""
     file_bytes = file.read()
@@ -175,11 +170,6 @@ def extract_text(file) -> str:
 
 @st.cache_data(show_spinner=False)
 def get_embedding(text: str) -> np.ndarray:
-    """
-    Uses the Hugging Face InferenceClient to perform feature extraction,
-    returning an embedding vector for the input text.
-    Pools token-level embeddings if necessary.
-    """
     client = InferenceClient(api_key=HF_API_KEY)
     try:
         result = client.feature_extraction(text, model=MODEL_NAME)
@@ -203,22 +193,13 @@ def get_embedding(text: str) -> np.ndarray:
         return np.array([])
 
 def compute_fit_score(emb1: np.ndarray, emb2: np.ndarray) -> float:
-    """
-    Computes cosine similarity between two embeddings and maps it to a percentage.
-    """
     sim = cosine_similarity(emb1.reshape(1, -1), emb2.reshape(1, -1))[0][0]
     return ((sim + 1) / 2) * 100
 
 def upsert_resume(resume_id: str, resume_emb: np.ndarray):
-    """
-    Upserts the resume embedding into the Pinecone index.
-    """
     index.upsert(vectors=[(resume_id, resume_emb.tolist())])
 
 def query_index(query_emb: np.ndarray, top_k: int = 1):
-    """
-    Queries the Pinecone index with the provided embedding.
-    """
     return index.query(vector=query_emb.tolist(), top_k=top_k)
 
 # -----------------------------------------------------------------------------
@@ -235,7 +216,6 @@ def main():
     st.subheader("Upload Job Description")
     jd_file = st.file_uploader("Choose a PDF, DOCX, or TXT file for the Job Description", type=["pdf", "docx", "txt"], key="jd")
     
-    # Option to review extracted text for each file.
     if resume_file:
         with st.expander("Review Extracted Resume Text"):
             st.write(extract_text(resume_file))
