@@ -4,6 +4,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from pinecone import Pinecone, ServerlessSpec
 import io
 from huggingface_hub import InferenceClient
+from sentence_transformers import SentenceTransformer
 
 # -----------------------------------------------------------------------------
 # Custom CSS for a Light, Creative Theme with Enhanced Readability and Dark Sidebar
@@ -81,53 +82,56 @@ div[data-testid="stFileUploader"] {
 st.markdown(custom_css, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# Configuration and Initialization
+# Sidebar: Mode and Model Selection
 # -----------------------------------------------------------------------------
-HF_API_KEY = st.secrets["general"]["HF_API_KEY"]
+# Choose between Online and Offline mode.
+mode = st.sidebar.radio("Select Mode", ["Online", "Offline"])
+if mode == "Online":
+    st.sidebar.markdown("<span style='color: #ffffff;'>Online mode uses the Hugging Face Inference API for embeddings.</span>", unsafe_allow_html=True)
+    # Model options for online mode.
+    model_options = {
+        "Model 1": "sentence-transformers/all-MiniLM-L6-v2",
+        "Model 2": "sentence-transformers/multi-qa-MiniLM-L6-cos-v1",
+        "Model 3": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+        "Model 4": "sentence-transformers/paraphrase-MiniLM-L6-v2",
+        "Model 5": "sentence-transformers/all-MiniLM-L12-v2"
+    }
+    selected_model_label = st.sidebar.selectbox("Select a model", list(model_options.keys()))
+    MODEL_NAME = model_options[selected_model_label]
+else:
+    st.sidebar.markdown("<span style='color: #ffffff;'>Offline mode loads the model locally. This may take a few moments.</span>", unsafe_allow_html=True)
+    # In offline mode, we fix the model to a specific one.
+    MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+    with st.sidebar.spinner("Downloading offline model..."):
+        @st.cache_resource(show_spinner=False)
+        def load_offline_model() -> SentenceTransformer:
+            return SentenceTransformer(MODEL_NAME)
+        offline_model = load_offline_model()
+    st.sidebar.success("Offline model ready to use!")
+
+# -----------------------------------------------------------------------------
+# Configuration and Initialization for Pinecone
+# -----------------------------------------------------------------------------
+HF_API_KEY = st.secrets["general"]["HF_API_KEY"]  # Used only for Online mode.
 PINECONE_API_KEY = st.secrets["general"]["PINECONE_API_KEY"]
 PINECONE_ENV = st.secrets["general"]["PINECONE_ENV"]
 
 INDEX_NAME = "job-fit-index"
-# Model options (displayed as Model 1, Model 2, etc.) with their corresponding model IDs.
-model_options = {
-    "Model 1": "sentence-transformers/all-MiniLM-L6-v2",
-    "Model 2": "sentence-transformers/multi-qa-MiniLM-L6-cos-v1",
-    "Model 3": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
-    "Model 4": "sentence-transformers/paraphrase-MiniLM-L6-v2",
-    "Model 5": "sentence-transformers/all-MiniLM-L12-v2"
-}
-# Set desired dimension to 384 (all these models return 384-d embeddings).
+# For all these models, we set the desired dimension to 384.
 DESIRED_DIMENSION = 384
 
-# Sidebar: Display custom help text with light text.
-st.sidebar.markdown("<span style='color: #ffffff;'>Model availability is dependent on third-party API uptime. If the selected model is temporarily unavailable, please try another.</span>", unsafe_allow_html=True)
-# Let the user select a model from the sidebar.
-selected_model_label = st.sidebar.selectbox("Select a model", list(model_options.keys()))
-MODEL_NAME = model_options[selected_model_label]
-
-# Initialize Pinecone using the new SDK pattern.
+# Initialize Pinecone.
 pc = Pinecone(api_key=PINECONE_API_KEY)
 spec = ServerlessSpec(cloud="aws", region=PINECONE_ENV)
-
 existing_indexes = pc.list_indexes().names()
 if INDEX_NAME in existing_indexes:
     desc = pc.describe_index(INDEX_NAME)
     if desc.dimension != DESIRED_DIMENSION:
         st.warning(f"Index dimension ({desc.dimension}) does not match desired dimension ({DESIRED_DIMENSION}). Recreating index.")
         pc.delete_index(INDEX_NAME)
-        pc.create_index(
-            name=INDEX_NAME,
-            dimension=DESIRED_DIMENSION,
-            metric="cosine",
-            spec=spec
-        )
+        pc.create_index(name=INDEX_NAME, dimension=DESIRED_DIMENSION, metric="cosine", spec=spec)
 else:
-    pc.create_index(
-        name=INDEX_NAME,
-        dimension=DESIRED_DIMENSION,
-        metric="cosine",
-        spec=spec
-    )
+    pc.create_index(name=INDEX_NAME, dimension=DESIRED_DIMENSION, metric="cosine", spec=spec)
 index = pc.Index(INDEX_NAME)
 
 # -----------------------------------------------------------------------------
@@ -169,7 +173,7 @@ def extract_text(file) -> str:
             return ""
 
 @st.cache_data(show_spinner=False)
-def get_embedding(text: str) -> np.ndarray:
+def get_embedding_online(text: str) -> np.ndarray:
     client = InferenceClient(api_key=HF_API_KEY)
     try:
         result = client.feature_extraction(text, model=MODEL_NAME)
@@ -181,15 +185,28 @@ def get_embedding(text: str) -> np.ndarray:
         else:
             st.error("Unexpected embedding dimensions.")
             return np.array([])
-        if not isinstance(pooled_embedding.tolist(), list):
-            st.error("Embedding is not a list-like structure.")
-            return np.array([])
         return pooled_embedding
     except Exception as e:
         if "503" in str(e):
             st.error("The selected model is temporarily unavailable due to third-party service issues. Please try another model or try again later.")
         else:
-            st.error(f"Error generating embedding: {e}")
+            st.error(f"Error generating online embedding: {e}")
+        return np.array([])
+
+def get_embedding_offline(text: str) -> np.ndarray:
+    try:
+        result = offline_model.encode(text)
+        embedding_array = np.array(result)
+        if embedding_array.ndim == 2:
+            pooled_embedding = embedding_array.mean(axis=0)
+        elif embedding_array.ndim == 1:
+            pooled_embedding = embedding_array
+        else:
+            st.error("Unexpected embedding dimensions.")
+            return np.array([])
+        return pooled_embedding
+    except Exception as e:
+        st.error(f"Error generating offline embedding: {e}")
         return np.array([])
 
 def compute_fit_score(emb1: np.ndarray, emb2: np.ndarray) -> float:
@@ -231,8 +248,12 @@ def main():
                 if not resume_text or not jd_text:
                     st.error("Could not extract text from one or both of the files.")
                     return
-                resume_emb = get_embedding(resume_text)
-                jd_emb = get_embedding(jd_text)
+                if mode == "Online":
+                    resume_emb = get_embedding_online(resume_text)
+                    jd_emb = get_embedding_online(jd_text)
+                else:
+                    resume_emb = get_embedding_offline(resume_text)
+                    jd_emb = get_embedding_offline(jd_text)
                 if resume_emb.size == 0 or jd_emb.size == 0:
                     st.error("Embedding generation failed. Please check your inputs and API configuration.")
                     return
