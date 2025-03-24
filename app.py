@@ -77,6 +77,13 @@ div[data-testid="stFileUploader"] {
 [data-testid="stSidebar"] * {
     color: #ffffff !important;
 }
+
+/* Custom styling for select dropdown in the sidebar */
+[data-testid="stSidebar"] select {
+    background-color: #2e003e !important;
+    color: #ffffff !important;
+    border: 1px solid #ffffff !important;
+}
 </style>
 """
 st.markdown(custom_css, unsafe_allow_html=True)
