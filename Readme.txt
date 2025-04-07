@@ -1,1 +1,1 @@
-This folder is for hugging face downloaded model
+IGNORE 
