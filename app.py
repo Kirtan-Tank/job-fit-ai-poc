@@ -1,9 +1,10 @@
+import os
+import io
 import streamlit as st
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from pinecone import Pinecone, ServerlessSpec
-import io
-from huggingface_hub import InferenceClient
+from huggingface_hub import snapshot_download, InferenceClient
 from sentence_transformers import SentenceTransformer
 
 # -----------------------------------------------------------------------------
@@ -14,25 +15,21 @@ custom_css = """
 /* Apply a soft pastel gradient background for the entire app */
 body, .stApp {
     background: linear-gradient(135deg, #f2e8ff, #ffeef9) !important;
-    color: #333333; /* Default dark grey text */
+    color: #333333;
 }
-
 /* Main container adjustments */
 div.block-container {
     background: transparent !important;
     padding: 2rem;
 }
-
 /* Style header text with darker shade */
 h1, h2, h3, h4, h5, h6 {
     color: #4a148c !important;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.1);
 }
-
 /* Paragraph text styling */
 p { color: #333333; }
-
 /* Style buttons with pleasant purple tone */
 div.stButton > button {
     background-color: #8e6bbf;
@@ -46,7 +43,6 @@ div.stButton > button {
 div.stButton > button:hover {
     background-color: #7a5aa9;
 }
-
 /* Style the file uploader */
 div[data-testid="stFileUploader"] {
     background-color: #ffffff;
@@ -55,7 +51,6 @@ div[data-testid="stFileUploader"] {
     padding: 1rem;
     color: #333333;
 }
-
 /* Style the expander header and content */
 .st-expanderHeader {
     background-color: #d1c4e9;
@@ -69,7 +64,6 @@ div[data-testid="stFileUploader"] {
     padding: 1rem;
     color: #333333;
 }
-
 /* Sidebar styling: very dark purple background with light text */
 [data-testid="stSidebar"] {
     background-color: #2e003e !important;
@@ -77,7 +71,6 @@ div[data-testid="stFileUploader"] {
 [data-testid="stSidebar"] * {
     color: #ffffff !important;
 }
-
 /* Custom styling for select dropdown in the sidebar */
 [data-testid="stSidebar"] select {
     background-color: #2e003e !important;
@@ -107,12 +100,24 @@ else:
     st.sidebar.markdown("<span style='color: #ffffff;'>Offline mode loads the model locally. This may take a few moments.</span>", unsafe_allow_html=True)
     MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
     offline_status = st.sidebar.empty()
-    offline_status.info("Downloading offline model...")
+    offline_status.info("Checking local model folder...")
+
+    # Define the local model directory (from your GitHub repo) and ignore note.txt
+    local_model_dir = "./downloads"
+    # List files in the folder, ignoring note.txt and hidden files
+    files = [f for f in os.listdir(local_model_dir) if f.lower() != "note.txt" and not f.startswith(".")]
+    if not files:
+        offline_status.info("Model files not found. Downloading model...")
+        # Download the model snapshot into the specified directory
+        snapshot_download(MODEL_NAME, local_dir=local_model_dir)
+        offline_status.success("Model downloaded successfully!")
+    else:
+        offline_status.success("Model files found, loading from local folder.")
+
     @st.cache_resource(show_spinner=False)
     def load_offline_model() -> SentenceTransformer:
-        return SentenceTransformer(MODEL_NAME)
+        return SentenceTransformer(local_model_dir)
     offline_model = load_offline_model()
-    offline_status.success("Offline model ready to use!")
 
 # -----------------------------------------------------------------------------
 # Configuration and Initialization for Pinecone
@@ -233,10 +238,10 @@ def main():
     # Change order: Job Description first.
     st.subheader("Upload Job Description")
     jd_file = st.file_uploader("Choose a PDF, DOCX, or TXT file for the Job Description", type=["pdf", "docx", "txt"], key="jd")
-    
+
     st.subheader("Upload Resume/CV")
     resume_file = st.file_uploader("Choose a PDF, DOCX, or TXT file for the Resume/CV", type=["pdf", "docx", "txt"], key="resume")
-    
+
     if jd_file:
         with st.expander("Review Extracted Job Description Text"):
             st.write(extract_text(jd_file))
