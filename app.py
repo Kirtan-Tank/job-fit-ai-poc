@@ -7,12 +7,12 @@ from huggingface_hub import InferenceClient
 from sentence_transformers import SentenceTransformer
 
 # -----------------------------------------------------------------------------
-# Custom CSS for a Light, Creative Theme with Enhanced Readability and Dark Sidebar
+# Custom CSS for a LinkedIn Blue Theme with Enhanced Readability and Dark Sidebar
 # -----------------------------------------------------------------------------
 custom_css = """
 <style>
 body, .stApp {
-    background: linear-gradient(135deg, #f2e8ff, #ffeef9) !important;
+    background: linear-gradient(135deg, #E1F5FE, #BBDEFB) !important;
     color: #333333;
 }
 div.block-container {
@@ -20,13 +20,13 @@ div.block-container {
     padding: 2rem;
 }
 h1, h2, h3, h4, h5, h6 {
-    color: #4a148c !important;
+    color: #0077B5 !important;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.1);
 }
 p { color: #333333; }
 div.stButton > button {
-    background-color: #8e6bbf;
+    background-color: #0077B5;
     color: #ffffff !important;
     border: none;
     border-radius: 10px;
@@ -35,59 +35,53 @@ div.stButton > button {
     box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.15);
 }
 div.stButton > button:hover {
-    background-color: #7a5aa9;
+    background-color: #005582;
 }
 div[data-testid="stFileUploader"] {
     background-color: #ffffff;
-    border: 2px dashed #a393d9;
+    border: 2px dashed #90CAF9;
     border-radius: 10px;
     padding: 1rem;
     color: #333333;
 }
 .st-expanderHeader {
-    background-color: #d1c4e9;
-    color: #4a148c;
+    background-color: #BBDEFB;
+    color: #0077B5;
     border-radius: 8px;
     padding: 0.5rem;
 }
 .st-expanderContent {
-    background-color: #f3e5f5;
+    background-color: #E3F2FD;
     border-radius: 8px;
     padding: 1rem;
     color: #333333;
 }
 [data-testid="stSidebar"] {
-    background-color: #2e003e !important;
+    background-color: #0077B5 !important;
 }
 [data-testid="stSidebar"] * {
     color: #ffffff !important;
 }
 [data-testid="stSidebar"] select {
-    background-color: #2e003e !important;
+    background-color: #0077B5 !important;
     color: #ffffff !important;
     border: 1px solid #ffffff !important;
+}
+/* Styling for large score display */
+.score-display {
+    font-size: 48px;
+    font-weight: bold;
+    color: #0077B5;
+    text-align: center;
+    margin-top: 20px;
 }
 </style>
 """
 st.markdown(custom_css, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# Sidebar: Mode and Model Selection
+# Sidebar: Model Selection (On-Demand mode only)
 # -----------------------------------------------------------------------------
-# Online mode is now disabled. All online-related code is commented out.
-# mode = st.sidebar.radio("Select Mode", ["Online", "On-Demand"])
-# if mode == "Online":
-#     st.sidebar.markdown("<span style='color: #ffffff;'>Online mode uses the Hugging Face Inference API for embeddings.</span>", unsafe_allow_html=True)
-#     model_options = {
-#         "Model 1": "sentence-transformers/all-MiniLM-L6-v2",
-#         "Model 2": "sentence-transformers/multi-qa-MiniLM-L6-cos-v1",
-#         "Model 3": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
-#         "Model 4": "sentence-transformers/paraphrase-MiniLM-L6-v2",
-#         "Model 5": "sentence-transformers/all-MiniLM-L12-v2"
-#     }
-#     selected_model_label = st.sidebar.selectbox("Select a model", list(model_options.keys()))
-#     MODEL_NAME = model_options[selected_model_label]
-# else:
 st.sidebar.markdown("<span style='color: #ffffff;'>On-Demand mode loads the model locally. This may take a few moments.</span>", unsafe_allow_html=True)
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 ondemand_status = st.sidebar.empty()
@@ -161,11 +155,6 @@ def extract_text(file) -> str:
             st.error(f"Error decoding text file: {e}")
             return ""
 
-# Online embedding function disabled
-# @st.cache_data(show_spinner=False)
-# def get_embedding_online(text: str) -> np.ndarray:
-#     return np.array([])
-
 def get_embedding_ondemand(text: str) -> np.ndarray:
     # Use the locally loaded model to generate the embedding
     emb = ondemand_model.encode(text)
@@ -185,9 +174,8 @@ def query_index(query_emb: np.ndarray, top_k: int = 1):
 # Streamlit User Interface
 # -----------------------------------------------------------------------------
 def main():
-    st.title("Job Fit Score Calculator")
+    st.title("Pro Connect AI Job Fit Score Calculator")
     st.write("Upload a job description document and a resume (or CV) to calculate a job fit score based on semantic similarity.")
-    st.warning("Note: Model availability depends on third-party API uptime. On-Demand mode is enabled.")
 
     st.subheader("Upload Job Description")
     jd_file = st.file_uploader("Choose a PDF, DOCX, or TXT file for the Job Description", type=["pdf", "docx", "txt"], key="jd")
@@ -217,7 +205,8 @@ def main():
                     st.error("Embedding generation failed. Please check your inputs and configuration.")
                     return
                 fit_score = compute_fit_score(resume_emb, jd_emb)
-                st.success(f"Job Fit Score: {fit_score:.2f}%")
+                # Display the score in a larger, more prominent style
+                st.markdown(f"<div class='score-display'>Job Fit Score: {fit_score:.2f}%</div>", unsafe_allow_html=True)
                 resume_id = "resume_1"
                 upsert_resume(resume_id, resume_emb)
                 with st.expander("Show Pinecone Query Details"):
