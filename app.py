@@ -74,28 +74,31 @@ st.markdown(custom_css, unsafe_allow_html=True)
 # -----------------------------------------------------------------------------
 # Sidebar: Mode and Model Selection
 # -----------------------------------------------------------------------------
-mode = st.sidebar.radio("Select Mode", ["Online", "On-Demand"])
-if mode == "Online":
-    st.sidebar.markdown("<span style='color: #ffffff;'>Online mode uses the Hugging Face Inference API for embeddings.</span>", unsafe_allow_html=True)
-    model_options = {
-        "Model 1": "sentence-transformers/all-MiniLM-L6-v2",
-        "Model 2": "sentence-transformers/multi-qa-MiniLM-L6-cos-v1",
-        "Model 3": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
-        "Model 4": "sentence-transformers/paraphrase-MiniLM-L6-v2",
-        "Model 5": "sentence-transformers/all-MiniLM-L12-v2"
-    }
-    selected_model_label = st.sidebar.selectbox("Select a model", list(model_options.keys()))
-    MODEL_NAME = model_options[selected_model_label]
-else:
-    st.sidebar.markdown("<span style='color: #ffffff;'>On-Demand mode loads the model locally. This may take a few moments.</span>", unsafe_allow_html=True)
-    MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
-    ondemand_status = st.sidebar.empty()
-    ondemand_status.info("Downloading model...")
-    @st.cache_resource(show_spinner=False)
-    def load_ondemand_model() -> SentenceTransformer:
-        return SentenceTransformer(MODEL_NAME)
-    ondemand_model = load_ondemand_model()
-    ondemand_status.success("Model ready to use!")
+# Online mode is now disabled. All online-related code is commented out.
+# mode = st.sidebar.radio("Select Mode", ["Online", "On-Demand"])
+# if mode == "Online":
+#     st.sidebar.markdown("<span style='color: #ffffff;'>Online mode uses the Hugging Face Inference API for embeddings.</span>", unsafe_allow_html=True)
+#     model_options = {
+#         "Model 1": "sentence-transformers/all-MiniLM-L6-v2",
+#         "Model 2": "sentence-transformers/multi-qa-MiniLM-L6-cos-v1",
+#         "Model 3": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+#         "Model 4": "sentence-transformers/paraphrase-MiniLM-L6-v2",
+#         "Model 5": "sentence-transformers/all-MiniLM-L12-v2"
+#     }
+#     selected_model_label = st.sidebar.selectbox("Select a model", list(model_options.keys()))
+#     MODEL_NAME = model_options[selected_model_label]
+# else:
+st.sidebar.markdown("<span style='color: #ffffff;'>On-Demand mode loads the model locally. This may take a few moments.</span>", unsafe_allow_html=True)
+MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+ondemand_status = st.sidebar.empty()
+ondemand_status.info("Downloading model...")
+
+@st.cache_resource(show_spinner=False)
+def load_ondemand_model() -> SentenceTransformer:
+    return SentenceTransformer(MODEL_NAME)
+
+ondemand_model = load_ondemand_model()
+ondemand_status.success("Model ready to use!")
 
 # -----------------------------------------------------------------------------
 # Configuration and Initialization for Pinecone
@@ -158,12 +161,15 @@ def extract_text(file) -> str:
             st.error(f"Error decoding text file: {e}")
             return ""
 
-@st.cache_data(show_spinner=False)
-def get_embedding_online(text: str) -> np.ndarray:
-    return np.array([])
+# Online embedding function disabled
+# @st.cache_data(show_spinner=False)
+# def get_embedding_online(text: str) -> np.ndarray:
+#     return np.array([])
 
 def get_embedding_ondemand(text: str) -> np.ndarray:
-    return np.array([])
+    # Use the locally loaded model to generate the embedding
+    emb = ondemand_model.encode(text)
+    return np.array(emb)
 
 def compute_fit_score(emb1: np.ndarray, emb2: np.ndarray) -> float:
     sim = cosine_similarity(emb1.reshape(1, -1), emb2.reshape(1, -1))[0][0]
@@ -181,7 +187,7 @@ def query_index(query_emb: np.ndarray, top_k: int = 1):
 def main():
     st.title("Job Fit Score Calculator")
     st.write("Upload a job description document and a resume (or CV) to calculate a job fit score based on semantic similarity.")
-    st.warning("Note: Model availability depends on third-party API uptime. If the selected model is unavailable, try another model from the sidebar.")
+    st.warning("Note: Model availability depends on third-party API uptime. On-Demand mode is enabled.")
 
     st.subheader("Upload Job Description")
     jd_file = st.file_uploader("Choose a PDF, DOCX, or TXT file for the Job Description", type=["pdf", "docx", "txt"], key="jd")
@@ -204,14 +210,11 @@ def main():
                 if not jd_text or not resume_text:
                     st.error("Could not extract text from one or both of the files.")
                     return
-                if mode == "Online":
-                    jd_emb = get_embedding_online(jd_text)
-                    resume_emb = get_embedding_online(resume_text)
-                else:
-                    jd_emb = get_embedding_ondemand(jd_text)
-                    resume_emb = get_embedding_ondemand(resume_text)
+                # Always use on-demand mode for embeddings
+                jd_emb = get_embedding_ondemand(jd_text)
+                resume_emb = get_embedding_ondemand(resume_text)
                 if jd_emb.size == 0 or resume_emb.size == 0:
-                    st.error("Embedding generation failed. Please check your inputs and API configuration.")
+                    st.error("Embedding generation failed. Please check your inputs and configuration.")
                     return
                 fit_score = compute_fit_score(resume_emb, jd_emb)
                 st.success(f"Job Fit Score: {fit_score:.2f}%")
