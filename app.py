@@ -1,5 +1,6 @@
 import os
 import io
+import shutil
 import streamlit as st
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
@@ -10,26 +11,21 @@ from sentence_transformers import SentenceTransformer
 # -----------------------------------------------------------------------------
 # Monkey Patch: Define init_empty_weights if not defined
 # -----------------------------------------------------------------------------
-# Some versions of transformers or torch may expect init_empty_weights to exist.
 try:
     init_empty_weights  # check if already defined
 except NameError:
-    # Try to import it from transformers if available
     try:
         from transformers.modeling_utils import init_empty_weights
     except ImportError:
-        # Otherwise, define a dummy version.
         def init_empty_weights(*args, **kwargs):
-            # This dummy does nothing. It may work for inference.
             return None
-        # Optionally, attach it to torch if that's what is expected.
         import torch
         torch.init_empty_weights = init_empty_weights
 
 # -----------------------------------------------------------------------------
 # Custom CSS Theme 
 # -----------------------------------------------------------------------------
-custom_css = """ 
+custom_css = """
 <style>
 /* Gradient background and modern look */
 body, .stApp { background: linear-gradient(135deg, #f2e8ff, #ffeef9) !important; color: #333333; }
@@ -65,12 +61,12 @@ div[data-testid="stFileUploader"] {
     color: #ffffff !important;
     border: 1px solid #ffffff !important;
 }
-</style> 
+</style>
 """
 st.markdown(custom_css, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# Sidebar: Mode Selection 
+# Sidebar: Mode and Model Selection
 # -----------------------------------------------------------------------------
 mode = st.sidebar.radio("Select Mode", ["Online", "Offline"])
 if mode == "Online":
@@ -85,28 +81,37 @@ if mode == "Online":
     selected_model_label = st.sidebar.selectbox("Select a model", list(model_options.keys()))
     MODEL_NAME = model_options[selected_model_label]
 else:
-    st.sidebar.markdown("<span style='color: #ffffff;'>Offline mode loads the model locally from GitHub folder.</span>", unsafe_allow_html=True)
-    # Ensure that the folder ./downloads/all-MiniLM-L6-v2 contains the model files (config.json, pytorch_model.bin, etc.)
-    MODEL_NAME = "./downloads/all-MiniLM-L6-v2"  
+    st.sidebar.markdown("<span style='color: #ffffff;'>Offline mode uses the local SentenceTransformer model.</span>", unsafe_allow_html=True)
+    # In offline mode, we use the SentenceTransformer id as is.
+    MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
     offline_status = st.sidebar.empty()
-    offline_status.info("Loading local model from: " + MODEL_NAME)
+    offline_status.info("Loading offline model...")
 
     @st.cache_resource(show_spinner=False)
-    def load_offline_model() -> SentenceTransformer:
+    def load_offline_model_robust() -> SentenceTransformer:
         try:
-            return SentenceTransformer(MODEL_NAME)
+            # Attempt to load the model from cache (or download if not available)
+            model = SentenceTransformer(MODEL_NAME)
+            return model
         except Exception as e:
-            st.error(f"Failed to load offline model: {e}")
-            return None
+            st.error(f"Error loading model: {e}. Clearing local Hugging Face cache and retrying...")
+            # Clear the Hugging Face cache (this clears transformers cache)
+            cache_dir = os.path.expanduser("~/.cache/huggingface")
+            if os.path.exists(cache_dir):
+                shutil.rmtree(cache_dir)
+            # Try loading again (this will force a re-download)
+            model = SentenceTransformer(MODEL_NAME)
+            return model
 
-    offline_model = load_offline_model()
+    with st.spinner("Downloading and caching model. Please wait..."):
+        offline_model = load_offline_model_robust()
     if offline_model is not None:
-        offline_status.success("Model loaded successfully!")
+        offline_status.success("Offline model is ready!")
     else:
-        offline_status.error("Model loading failed.")
+        offline_status.error("Offline model loading failed.")
 
 # -----------------------------------------------------------------------------
-# Pinecone Setup 
+# Pinecone Setup
 # -----------------------------------------------------------------------------
 HF_API_KEY = st.secrets["general"]["HF_API_KEY"]
 PINECONE_API_KEY = st.secrets["general"]["PINECONE_API_KEY"]
@@ -121,7 +126,7 @@ existing_indexes = pc.list_indexes().names()
 if INDEX_NAME in existing_indexes:
     desc = pc.describe_index(INDEX_NAME)
     if desc.dimension != DESIRED_DIMENSION:
-        st.warning("Index dimension mismatch. Recreating index.")
+        st.warning(f"Index dimension ({desc.dimension}) does not match desired dimension ({DESIRED_DIMENSION}). Recreating index.")
         pc.delete_index(INDEX_NAME)
         pc.create_index(name=INDEX_NAME, dimension=DESIRED_DIMENSION, metric="cosine", spec=spec)
 else:
@@ -129,8 +134,9 @@ else:
 index = pc.Index(INDEX_NAME)
 
 # -----------------------------------------------------------------------------
-# Utility Functions (File Extraction without Caching)
+# Utility Functions
 # -----------------------------------------------------------------------------
+@st.cache_data(show_spinner=False)
 def extract_text(file) -> str:
     if file is None:
         return ""
@@ -140,23 +146,29 @@ def extract_text(file) -> str:
         try:
             import PyPDF2
             pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
-            return "\n".join([p.extract_text() or "" for p in pdf_reader.pages]).strip()
+            text = ""
+            for page in pdf_reader.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n"
+            return text.strip()
         except Exception as e:
-            st.error(f"PDF Error: {e}")
+            st.error(f"Error processing PDF: {e}")
             return ""
     elif file.name.lower().endswith(".docx"):
         try:
             import docx
             doc = docx.Document(io.BytesIO(file_bytes))
-            return "\n".join([para.text for para in doc.paragraphs]).strip()
+            text = "\n".join([para.text for para in doc.paragraphs])
+            return text.strip()
         except Exception as e:
-            st.error(f"DOCX Error: {e}")
+            st.error(f"Error processing DOCX: {e}")
             return ""
     else:
         try:
             return file_bytes.decode("utf-8")
         except Exception as e:
-            st.error(f"Text file error: {e}")
+            st.error(f"Error decoding text file: {e}")
             return ""
 
 @st.cache_data(show_spinner=False)
@@ -165,20 +177,35 @@ def get_embedding_online(text: str) -> np.ndarray:
     try:
         result = client.feature_extraction(text, model=MODEL_NAME)
         embedding_array = np.array(result)
-        return embedding_array.mean(axis=0) if embedding_array.ndim == 2 else embedding_array
+        if embedding_array.ndim == 2:
+            pooled_embedding = embedding_array.mean(axis=0)
+        elif embedding_array.ndim == 1:
+            pooled_embedding = embedding_array
+        else:
+            st.error("Unexpected embedding dimensions.")
+            return np.array([])
+        return pooled_embedding
     except Exception as e:
-        st.error(f"Online embedding error: {e}")
+        if "503" in str(e):
+            st.error("The selected model is temporarily unavailable due to third-party service issues. Please try another model or try again later.")
+        else:
+            st.error(f"Error generating online embedding: {e}")
         return np.array([])
 
 def get_embedding_offline(text: str) -> np.ndarray:
-    if offline_model is None:
-        st.error("Offline model is not loaded.")
-        return np.array([])
     try:
-        embedding = offline_model.encode(text)
-        return embedding.mean(axis=0) if embedding.ndim == 2 else embedding
+        result = offline_model.encode(text)
+        embedding_array = np.array(result)
+        if embedding_array.ndim == 2:
+            pooled_embedding = embedding_array.mean(axis=0)
+        elif embedding_array.ndim == 1:
+            pooled_embedding = embedding_array
+        else:
+            st.error("Unexpected embedding dimensions.")
+            return np.array([])
+        return pooled_embedding
     except Exception as e:
-        st.error(f"Offline embedding error: {e}")
+        st.error(f"Error generating offline embedding: {e}")
         return np.array([])
 
 def compute_fit_score(emb1: np.ndarray, emb2: np.ndarray) -> float:
@@ -192,57 +219,79 @@ def query_index(query_emb: np.ndarray, top_k: int = 1):
     return index.query(vector=query_emb.tolist(), top_k=top_k)
 
 # -----------------------------------------------------------------------------
-# Streamlit UI 
+# Robust Similarity Calculation Example (for testing)
+# -----------------------------------------------------------------------------
+def test_similarity():
+    model_to_use = None
+    if mode == "Online":
+        # In online mode, we simply load the model via API call.
+        model_to_use = SentenceTransformer(MODEL_NAME)
+    else:
+        model_to_use = offline_model
+
+    sentences = [
+        "That is a happy person",
+        "That is a happy dog",
+        "That is a very happy person",
+        "Today is a sunny day"
+    ]
+    embeddings = model_to_use.encode(sentences)
+    # Use cosine_similarity from sklearn to compute similarities
+    sims = cosine_similarity(embeddings)
+    st.write("Similarity matrix shape:", sims.shape)
+    st.write(sims)
+
+# -----------------------------------------------------------------------------
+# Streamlit User Interface
 # -----------------------------------------------------------------------------
 def main():
     st.title("Job Fit Score Calculator")
-    st.write("Upload a job description and resume to compute a job-fit percentage.")
-    st.warning("Model availability may depend on API uptime. Use Offline mode for reliability.")
+    st.write("Upload a job description document and a resume (or CV) to calculate a job fit score based on semantic similarity.")
+    st.warning("Note: Model availability may depend on third-party API uptime. If the selected model is unavailable, try another model from the sidebar.")
+
+    # Optionally, show a test similarity matrix
+    if st.button("Run Similarity Test"):
+        test_similarity()
 
     st.subheader("Upload Job Description")
-    jd_file = st.file_uploader("Upload JD (PDF, DOCX, or TXT)", type=["pdf", "docx", "txt"], key="jd")
-
-    st.subheader("Upload Resume")
-    resume_file = st.file_uploader("Upload Resume (PDF, DOCX, or TXT)", type=["pdf", "docx", "txt"], key="resume")
-
+    jd_file = st.file_uploader("Choose a PDF, DOCX, or TXT file for the Job Description", type=["pdf", "docx", "txt"], key="jd")
+    
+    st.subheader("Upload Resume/CV")
+    resume_file = st.file_uploader("Choose a PDF, DOCX, or TXT file for the Resume/CV", type=["pdf", "docx", "txt"], key="resume")
+    
     if jd_file:
-        with st.expander("View Job Description Text"):
+        with st.expander("Review Extracted Job Description Text"):
             st.write(extract_text(jd_file))
     if resume_file:
-        with st.expander("View Resume Text"):
+        with st.expander("Review Extracted Resume Text"):
             st.write(extract_text(resume_file))
-
+    
     if st.button("Calculate Fit Score"):
         if jd_file and resume_file:
-            with st.spinner("Processing..."):
+            with st.spinner("Extracting text and generating embeddings..."):
                 jd_text = extract_text(jd_file)
                 resume_text = extract_text(resume_file)
                 if not jd_text or not resume_text:
-                    st.error("Text extraction failed.")
+                    st.error("Could not extract text from one or both of the files.")
                     return
-
-                # Select the appropriate embedding function based on mode.
                 if mode == "Online":
                     jd_emb = get_embedding_online(jd_text)
                     resume_emb = get_embedding_online(resume_text)
                 else:
                     jd_emb = get_embedding_offline(jd_text)
                     resume_emb = get_embedding_offline(resume_text)
-
                 if jd_emb.size == 0 or resume_emb.size == 0:
-                    st.error("Embedding error.")
+                    st.error("Embedding generation failed. Please check your inputs and API configuration.")
                     return
-
                 fit_score = compute_fit_score(resume_emb, jd_emb)
                 st.success(f"Job Fit Score: {fit_score:.2f}%")
-
                 resume_id = "resume_1"  # Modify as needed for unique IDs.
                 upsert_resume(resume_id, resume_emb)
-                with st.expander("Pinecone Query Result"):
+                with st.expander("Show Pinecone Query Result"):
                     result = query_index(jd_emb, top_k=1)
                     st.write(result)
         else:
-            st.error("Please upload both files.")
+            st.error("Please upload both a job description and a resume (or CV).")
 
 if __name__ == "__main__":
     main()
