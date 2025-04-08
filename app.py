@@ -7,9 +7,9 @@ from pinecone import Pinecone, ServerlessSpec
 from huggingface_hub import InferenceClient
 from sentence_transformers import SentenceTransformer
 
-# ----------------------------------------------------------------------------- 
+# -----------------------------------------------------------------------------
 # Custom CSS Theme 
-# ----------------------------------------------------------------------------- 
+# -----------------------------------------------------------------------------
 custom_css = """ 
 <style>
 /* Gradient background and modern look */
@@ -50,9 +50,9 @@ div[data-testid="stFileUploader"] {
 """
 st.markdown(custom_css, unsafe_allow_html=True)
 
-# ----------------------------------------------------------------------------- 
+# -----------------------------------------------------------------------------
 # Sidebar: Mode Selection 
-# ----------------------------------------------------------------------------- 
+# -----------------------------------------------------------------------------
 mode = st.sidebar.radio("Select Mode", ["Online", "Offline"])
 if mode == "Online":
     st.sidebar.markdown("<span style='color: #ffffff;'>Online mode uses the Hugging Face Inference API for embeddings.</span>", unsafe_allow_html=True)
@@ -67,19 +67,26 @@ if mode == "Online":
     MODEL_NAME = model_options[selected_model_label]
 else:
     st.sidebar.markdown("<span style='color: #ffffff;'>Offline mode loads the model locally from GitHub folder.</span>", unsafe_allow_html=True)
-    MODEL_NAME = "./downloads/all-MiniLM-L6-v2"  # Your local model path
+    MODEL_NAME = "./downloads/all-MiniLM-L6-v2"  # Local model path (ensure this folder contains the model files)
     offline_status = st.sidebar.empty()
     offline_status.info("Loading local model from: " + MODEL_NAME)
 
     @st.cache_resource(show_spinner=False)
     def load_offline_model() -> SentenceTransformer:
-        return SentenceTransformer(MODEL_NAME)
+        try:
+            return SentenceTransformer(MODEL_NAME)
+        except Exception as e:
+            st.error(f"Failed to load offline model: {e}")
+            return None
     offline_model = load_offline_model()
-    offline_status.success("Model loaded successfully!")
+    if offline_model is not None:
+        offline_status.success("Model loaded successfully!")
+    else:
+        offline_status.error("Model loading failed.")
 
-# ----------------------------------------------------------------------------- 
+# -----------------------------------------------------------------------------
 # Pinecone Setup 
-# ----------------------------------------------------------------------------- 
+# -----------------------------------------------------------------------------
 HF_API_KEY = st.secrets["general"]["HF_API_KEY"]
 PINECONE_API_KEY = st.secrets["general"]["PINECONE_API_KEY"]
 PINECONE_ENV = st.secrets["general"]["PINECONE_ENV"]
@@ -93,17 +100,16 @@ existing_indexes = pc.list_indexes().names()
 if INDEX_NAME in existing_indexes:
     desc = pc.describe_index(INDEX_NAME)
     if desc.dimension != DESIRED_DIMENSION:
-        st.warning(f"Index dimension mismatch. Recreating index.")
+        st.warning("Index dimension mismatch. Recreating index.")
         pc.delete_index(INDEX_NAME)
         pc.create_index(name=INDEX_NAME, dimension=DESIRED_DIMENSION, metric="cosine", spec=spec)
 else:
     pc.create_index(name=INDEX_NAME, dimension=DESIRED_DIMENSION, metric="cosine", spec=spec)
 index = pc.Index(INDEX_NAME)
 
-# ----------------------------------------------------------------------------- 
-# Utility Functions 
-# ----------------------------------------------------------------------------- 
-@st.cache_data(show_spinner=False)
+# -----------------------------------------------------------------------------
+# Utility Functions (File Extraction without Caching)
+# -----------------------------------------------------------------------------
 def extract_text(file) -> str:
     if file is None:
         return ""
@@ -161,9 +167,9 @@ def upsert_resume(resume_id: str, resume_emb: np.ndarray):
 def query_index(query_emb: np.ndarray, top_k: int = 1):
     return index.query(vector=query_emb.tolist(), top_k=top_k)
 
-# ----------------------------------------------------------------------------- 
+# -----------------------------------------------------------------------------
 # Streamlit UI 
-# ----------------------------------------------------------------------------- 
+# -----------------------------------------------------------------------------
 def main():
     st.title("Job Fit Score Calculator")
     st.write("Upload a job description and resume to compute a job-fit percentage.")
@@ -205,7 +211,7 @@ def main():
                 fit_score = compute_fit_score(resume_emb, jd_emb)
                 st.success(f"Job Fit Score: {fit_score:.2f}%")
 
-                resume_id = "resume_1"
+                resume_id = "resume_1"  # You can modify this to generate unique IDs if needed.
                 upsert_resume(resume_id, resume_emb)
                 with st.expander("Pinecone Query Result"):
                     result = query_index(jd_emb, top_k=1)
