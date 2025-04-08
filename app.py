@@ -67,7 +67,8 @@ if mode == "Online":
     MODEL_NAME = model_options[selected_model_label]
 else:
     st.sidebar.markdown("<span style='color: #ffffff;'>Offline mode loads the model locally from GitHub folder.</span>", unsafe_allow_html=True)
-    MODEL_NAME = "./downloads/all-MiniLM-L6-v2"  # Local model path (ensure this folder contains the model files)
+    # Note: Ensure that the local folder contains the model files (config.json, pytorch_model.bin, etc.)
+    MODEL_NAME = "./downloads/all-MiniLM-L6-v2"  
     offline_status = st.sidebar.empty()
     offline_status.info("Loading local model from: " + MODEL_NAME)
 
@@ -78,6 +79,7 @@ else:
         except Exception as e:
             st.error(f"Failed to load offline model: {e}")
             return None
+
     offline_model = load_offline_model()
     if offline_model is not None:
         offline_status.success("Model loaded successfully!")
@@ -119,6 +121,7 @@ def extract_text(file) -> str:
         try:
             import PyPDF2
             pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
+            # Extract text from each page and join
             return "\n".join([p.extract_text() or "" for p in pdf_reader.pages]).strip()
         except Exception as e:
             st.error(f"PDF Error: {e}")
@@ -150,6 +153,9 @@ def get_embedding_online(text: str) -> np.ndarray:
         return np.array([])
 
 def get_embedding_offline(text: str) -> np.ndarray:
+    if offline_model is None:
+        st.error("Offline model is not loaded.")
+        return np.array([])
     try:
         embedding = offline_model.encode(text)
         return embedding.mean(axis=0) if embedding.ndim == 2 else embedding
@@ -197,6 +203,7 @@ def main():
                     st.error("Text extraction failed.")
                     return
 
+                # Select the appropriate embedding function based on mode.
                 if mode == "Online":
                     jd_emb = get_embedding_online(jd_text)
                     resume_emb = get_embedding_online(resume_text)
@@ -211,7 +218,7 @@ def main():
                 fit_score = compute_fit_score(resume_emb, jd_emb)
                 st.success(f"Job Fit Score: {fit_score:.2f}%")
 
-                resume_id = "resume_1"  # You can modify this to generate unique IDs if needed.
+                resume_id = "resume_1"  # Modify as needed for unique IDs.
                 upsert_resume(resume_id, resume_emb)
                 with st.expander("Pinecone Query Result"):
                     result = query_index(jd_emb, top_k=1)
