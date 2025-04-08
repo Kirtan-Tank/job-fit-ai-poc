@@ -9,7 +9,7 @@ import streamlit as st
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from pinecone import Pinecone, ServerlessSpec
-from huggingface_hub import InferenceClient, whoami
+from huggingface_hub import InferenceClient, whoami, snapshot_download
 from sentence_transformers import SentenceTransformer
 
 # -------------------------------------------------------------------
@@ -117,24 +117,17 @@ else:
     @st.cache_resource(show_spinner=False)
     def load_on_demand_model() -> SentenceTransformer:
         cache_root = pathlib.Path.home() / ".cache" / "huggingface" / "hub"
-        model_folder = cache_root / MODEL_NAME.replace("/", "--")
-        # If not cached, temporarily allow online fetch:
-        if not (model_folder / "config.json").exists():
-            on_demand_status.info("Model not in cache—downloading from HF Hub…")
-            # Remove offline flags
-            os.environ.pop("HF_HUB_OFFLINE", None)
-            os.environ.pop("TRANSFORMERS_OFFLINE", None)
-            model = SentenceTransformer(MODEL_NAME)
-            # Re-enable offline mode
-            os.environ["HF_HUB_OFFLINE"] = "1"
-            os.environ["TRANSFORMERS_OFFLINE"] = "1"
-            return model
-        # Otherwise load from cache only
-        return SentenceTransformer(MODEL_NAME)
-
-    # Ensure offline mode flags are set for all subsequent imports
-    os.environ["HF_HUB_OFFLINE"] = "1"
-    os.environ["TRANSFORMERS_OFFLINE"] = "1"
+        # Download snapshot if missing
+        repo_path = snapshot_download(
+            repo_id=MODEL_NAME,
+            cache_dir=str(cache_root),
+            local_dir=None,
+            local_dir_use_symlinks=False,
+            resume_download=True,
+            token=os.environ.get("HUGGINGFACE_HUB_TOKEN", None),
+        )
+        on_demand_status.info(f"Model snapshot downloaded to {repo_path}")
+        return SentenceTransformer(str(repo_path))
 
     with st.spinner("Loading model…"):
         try:
