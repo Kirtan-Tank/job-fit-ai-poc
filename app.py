@@ -8,6 +8,25 @@ from huggingface_hub import InferenceClient
 from sentence_transformers import SentenceTransformer
 
 # -----------------------------------------------------------------------------
+# Monkey Patch: Define init_empty_weights if not defined
+# -----------------------------------------------------------------------------
+# Some versions of transformers or torch may expect init_empty_weights to exist.
+try:
+    init_empty_weights  # check if already defined
+except NameError:
+    # Try to import it from transformers if available
+    try:
+        from transformers.modeling_utils import init_empty_weights
+    except ImportError:
+        # Otherwise, define a dummy version.
+        def init_empty_weights(*args, **kwargs):
+            # This dummy does nothing. It may work for inference.
+            return None
+        # Optionally, attach it to torch if that's what is expected.
+        import torch
+        torch.init_empty_weights = init_empty_weights
+
+# -----------------------------------------------------------------------------
 # Custom CSS Theme 
 # -----------------------------------------------------------------------------
 custom_css = """ 
@@ -67,7 +86,7 @@ if mode == "Online":
     MODEL_NAME = model_options[selected_model_label]
 else:
     st.sidebar.markdown("<span style='color: #ffffff;'>Offline mode loads the model locally from GitHub folder.</span>", unsafe_allow_html=True)
-    # Note: Ensure that the local folder contains the model files (config.json, pytorch_model.bin, etc.)
+    # Ensure that the folder ./downloads/all-MiniLM-L6-v2 contains the model files (config.json, pytorch_model.bin, etc.)
     MODEL_NAME = "./downloads/all-MiniLM-L6-v2"  
     offline_status = st.sidebar.empty()
     offline_status.info("Loading local model from: " + MODEL_NAME)
@@ -121,7 +140,6 @@ def extract_text(file) -> str:
         try:
             import PyPDF2
             pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
-            # Extract text from each page and join
             return "\n".join([p.extract_text() or "" for p in pdf_reader.pages]).strip()
         except Exception as e:
             st.error(f"PDF Error: {e}")
