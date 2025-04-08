@@ -11,29 +11,20 @@ from sentence_transformers import SentenceTransformer
 # -----------------------------------------------------------------------------
 custom_css = """
 <style>
-/* Apply a soft pastel gradient background for the entire app */
 body, .stApp {
     background: linear-gradient(135deg, #f2e8ff, #ffeef9) !important;
-    color: #333333; /* Default dark grey text */
+    color: #333333;
 }
-
-/* Main container adjustments */
 div.block-container {
     background: transparent !important;
     padding: 2rem;
 }
-
-/* Style header text with darker shade */
 h1, h2, h3, h4, h5, h6 {
     color: #4a148c !important;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.1);
 }
-
-/* Paragraph text styling */
 p { color: #333333; }
-
-/* Style buttons with pleasant purple tone */
 div.stButton > button {
     background-color: #8e6bbf;
     color: #ffffff !important;
@@ -46,8 +37,6 @@ div.stButton > button {
 div.stButton > button:hover {
     background-color: #7a5aa9;
 }
-
-/* Style the file uploader */
 div[data-testid="stFileUploader"] {
     background-color: #ffffff;
     border: 2px dashed #a393d9;
@@ -55,8 +44,6 @@ div[data-testid="stFileUploader"] {
     padding: 1rem;
     color: #333333;
 }
-
-/* Style the expander header and content */
 .st-expanderHeader {
     background-color: #d1c4e9;
     color: #4a148c;
@@ -69,16 +56,12 @@ div[data-testid="stFileUploader"] {
     padding: 1rem;
     color: #333333;
 }
-
-/* Sidebar styling: very dark purple background with light text */
 [data-testid="stSidebar"] {
     background-color: #2e003e !important;
 }
 [data-testid="stSidebar"] * {
     color: #ffffff !important;
 }
-
-/* Custom styling for select dropdown in the sidebar */
 [data-testid="stSidebar"] select {
     background-color: #2e003e !important;
     color: #ffffff !important;
@@ -91,7 +74,7 @@ st.markdown(custom_css, unsafe_allow_html=True)
 # -----------------------------------------------------------------------------
 # Sidebar: Mode and Model Selection
 # -----------------------------------------------------------------------------
-mode = st.sidebar.radio("Select Mode", ["Online", "Offline"])
+mode = st.sidebar.radio("Select Mode", ["Online", "On-Demand"])
 if mode == "Online":
     st.sidebar.markdown("<span style='color: #ffffff;'>Online mode uses the Hugging Face Inference API for embeddings.</span>", unsafe_allow_html=True)
     model_options = {
@@ -104,20 +87,20 @@ if mode == "Online":
     selected_model_label = st.sidebar.selectbox("Select a model", list(model_options.keys()))
     MODEL_NAME = model_options[selected_model_label]
 else:
-    st.sidebar.markdown("<span style='color: #ffffff;'>Offline mode loads the model locally. This may take a few moments.</span>", unsafe_allow_html=True)
+    st.sidebar.markdown("<span style='color: #ffffff;'>On-Demand mode loads the model locally. This may take a few moments.</span>", unsafe_allow_html=True)
     MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
-    offline_status = st.sidebar.empty()
-    offline_status.info("Downloading offline model...")
+    ondemand_status = st.sidebar.empty()
+    ondemand_status.info("Downloading model...")
     @st.cache_resource(show_spinner=False)
-    def load_offline_model() -> SentenceTransformer:
+    def load_ondemand_model() -> SentenceTransformer:
         return SentenceTransformer(MODEL_NAME)
-    offline_model = load_offline_model()
-    offline_status.success("Offline model ready to use!")
+    ondemand_model = load_ondemand_model()
+    ondemand_status.success("Model ready to use!")
 
 # -----------------------------------------------------------------------------
 # Configuration and Initialization for Pinecone
 # -----------------------------------------------------------------------------
-HF_API_KEY = st.secrets["general"]["HF_API_KEY"]  # Used only for Online mode.
+HF_API_KEY = st.secrets["general"]["HF_API_KEY"]
 PINECONE_API_KEY = st.secrets["general"]["PINECONE_API_KEY"]
 PINECONE_ENV = st.secrets["general"]["PINECONE_ENV"]
 
@@ -177,10 +160,10 @@ def extract_text(file) -> str:
 
 @st.cache_data(show_spinner=False)
 def get_embedding_online(text: str) -> np.ndarray:
-        return np.array([])
+    return np.array([])
 
-def get_embedding_offline(text: str) -> np.ndarray:
-        return np.array([])
+def get_embedding_ondemand(text: str) -> np.ndarray:
+    return np.array([])
 
 def compute_fit_score(emb1: np.ndarray, emb2: np.ndarray) -> float:
     sim = cosine_similarity(emb1.reshape(1, -1), emb2.reshape(1, -1))[0][0]
@@ -200,7 +183,6 @@ def main():
     st.write("Upload a job description document and a resume (or CV) to calculate a job fit score based on semantic similarity.")
     st.warning("Note: Model availability depends on third-party API uptime. If the selected model is unavailable, try another model from the sidebar.")
 
-    # Change order: Job Description first.
     st.subheader("Upload Job Description")
     jd_file = st.file_uploader("Choose a PDF, DOCX, or TXT file for the Job Description", type=["pdf", "docx", "txt"], key="jd")
     
@@ -226,8 +208,8 @@ def main():
                     jd_emb = get_embedding_online(jd_text)
                     resume_emb = get_embedding_online(resume_text)
                 else:
-                    jd_emb = get_embedding_offline(jd_text)
-                    resume_emb = get_embedding_offline(resume_text)
+                    jd_emb = get_embedding_ondemand(jd_text)
+                    resume_emb = get_embedding_ondemand(resume_text)
                 if jd_emb.size == 0 or resume_emb.size == 0:
                     st.error("Embedding generation failed. Please check your inputs and API configuration.")
                     return
