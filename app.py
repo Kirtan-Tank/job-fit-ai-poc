@@ -12,7 +12,7 @@ from sentence_transformers import SentenceTransformer
 # Monkey Patch: Define init_empty_weights if not defined
 # -----------------------------------------------------------------------------
 try:
-    init_empty_weights  # check if already defined
+    init_empty_weights  # Check if already defined.
 except NameError:
     try:
         from transformers.modeling_utils import init_empty_weights
@@ -81,8 +81,8 @@ if mode == "Online":
     selected_model_label = st.sidebar.selectbox("Select a model", list(model_options.keys()))
     MODEL_NAME = model_options[selected_model_label]
 else:
-    st.sidebar.markdown("<span style='color: #ffffff;'>On-Demand mode uses the local SentenceTransformer model.</span>", unsafe_allow_html=True)
-    # In on-demand mode, we use the SentenceTransformer model ID directly.
+    st.sidebar.markdown("<span style='color: #ffffff;'>On-Demand mode uses local SentenceTransformer inference.</span>", unsafe_allow_html=True)
+    # In On-Demand mode, we use the model id directly so that it downloads (if not cached) and then reuses it.
     MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
     on_demand_status = st.sidebar.empty()
     on_demand_status.info("Downloading and caching model. Please wait...")
@@ -90,12 +90,11 @@ else:
     @st.cache_resource(show_spinner=False)
     def load_on_demand_model() -> SentenceTransformer:
         try:
-            # Try loading the model (from cache or downloading if needed)
             model = SentenceTransformer(MODEL_NAME)
             return model
         except Exception as e:
             st.error(f"Error loading model: {e}. Clearing cache and retrying...")
-            # Clear Hugging Face cache directory to force re-download.
+            # Clear the Hugging Face cache directory to force re-download.
             cache_dir = os.path.expanduser("~/.cache/huggingface")
             if os.path.exists(cache_dir):
                 shutil.rmtree(cache_dir)
@@ -110,7 +109,7 @@ else:
         on_demand_status.error("Model loading failed.")
 
 # -----------------------------------------------------------------------------
-# Pinecone Setup
+# Pinecone Setup 
 # -----------------------------------------------------------------------------
 HF_API_KEY = st.secrets["general"]["HF_API_KEY"]
 PINECONE_API_KEY = st.secrets["general"]["PINECONE_API_KEY"]
