@@ -68,7 +68,7 @@ st.markdown(custom_css, unsafe_allow_html=True)
 # -----------------------------------------------------------------------------
 # Sidebar: Mode and Model Selection
 # -----------------------------------------------------------------------------
-mode = st.sidebar.radio("Select Mode", ["Online", "Offline"])
+mode = st.sidebar.radio("Select Mode", ["Online", "On-Demand"])
 if mode == "Online":
     st.sidebar.markdown("<span style='color: #ffffff;'>Online mode uses the Hugging Face Inference API for embeddings.</span>", unsafe_allow_html=True)
     model_options = {
@@ -81,34 +81,33 @@ if mode == "Online":
     selected_model_label = st.sidebar.selectbox("Select a model", list(model_options.keys()))
     MODEL_NAME = model_options[selected_model_label]
 else:
-    st.sidebar.markdown("<span style='color: #ffffff;'>Offline mode uses the local SentenceTransformer model.</span>", unsafe_allow_html=True)
-    # In offline mode, we use the SentenceTransformer id as is.
+    st.sidebar.markdown("<span style='color: #ffffff;'>On-Demand mode uses the local SentenceTransformer model.</span>", unsafe_allow_html=True)
+    # In on-demand mode, we use the SentenceTransformer model ID directly.
     MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
-    offline_status = st.sidebar.empty()
-    offline_status.info("Loading offline model...")
+    on_demand_status = st.sidebar.empty()
+    on_demand_status.info("Downloading and caching model. Please wait...")
 
     @st.cache_resource(show_spinner=False)
-    def load_offline_model_robust() -> SentenceTransformer:
+    def load_on_demand_model() -> SentenceTransformer:
         try:
-            # Attempt to load the model from cache (or download if not available)
+            # Try loading the model (from cache or downloading if needed)
             model = SentenceTransformer(MODEL_NAME)
             return model
         except Exception as e:
-            st.error(f"Error loading model: {e}. Clearing local Hugging Face cache and retrying...")
-            # Clear the Hugging Face cache (this clears transformers cache)
+            st.error(f"Error loading model: {e}. Clearing cache and retrying...")
+            # Clear Hugging Face cache directory to force re-download.
             cache_dir = os.path.expanduser("~/.cache/huggingface")
             if os.path.exists(cache_dir):
                 shutil.rmtree(cache_dir)
-            # Try loading again (this will force a re-download)
             model = SentenceTransformer(MODEL_NAME)
             return model
 
-    with st.spinner("Downloading and caching model. Please wait..."):
-        offline_model = load_offline_model_robust()
-    if offline_model is not None:
-        offline_status.success("Offline model is ready!")
+    with st.spinner("Downloading and caching model. This may take several minutes..."):
+        on_demand_model = load_on_demand_model()
+    if on_demand_model is not None:
+        on_demand_status.success("Model loaded successfully!")
     else:
-        offline_status.error("Offline model loading failed.")
+        on_demand_status.error("Model loading failed.")
 
 # -----------------------------------------------------------------------------
 # Pinecone Setup
@@ -192,9 +191,9 @@ def get_embedding_online(text: str) -> np.ndarray:
             st.error(f"Error generating online embedding: {e}")
         return np.array([])
 
-def get_embedding_offline(text: str) -> np.ndarray:
+def get_embedding_on_demand(text: str) -> np.ndarray:
     try:
-        result = offline_model.encode(text)
+        result = on_demand_model.encode(text)
         embedding_array = np.array(result)
         if embedding_array.ndim == 2:
             pooled_embedding = embedding_array.mean(axis=0)
@@ -205,7 +204,7 @@ def get_embedding_offline(text: str) -> np.ndarray:
             return np.array([])
         return pooled_embedding
     except Exception as e:
-        st.error(f"Error generating offline embedding: {e}")
+        st.error(f"Error generating on-demand embedding: {e}")
         return np.array([])
 
 def compute_fit_score(emb1: np.ndarray, emb2: np.ndarray) -> float:
@@ -224,10 +223,9 @@ def query_index(query_emb: np.ndarray, top_k: int = 1):
 def test_similarity():
     model_to_use = None
     if mode == "Online":
-        # In online mode, we simply load the model via API call.
         model_to_use = SentenceTransformer(MODEL_NAME)
     else:
-        model_to_use = offline_model
+        model_to_use = on_demand_model
 
     sentences = [
         "That is a happy person",
@@ -236,7 +234,6 @@ def test_similarity():
         "Today is a sunny day"
     ]
     embeddings = model_to_use.encode(sentences)
-    # Use cosine_similarity from sklearn to compute similarities
     sims = cosine_similarity(embeddings)
     st.write("Similarity matrix shape:", sims.shape)
     st.write(sims)
@@ -247,9 +244,9 @@ def test_similarity():
 def main():
     st.title("Job Fit Score Calculator")
     st.write("Upload a job description document and a resume (or CV) to calculate a job fit score based on semantic similarity.")
-    st.warning("Note: Model availability may depend on third-party API uptime. If the selected model is unavailable, try another model from the sidebar.")
+    st.warning("Note: Model availability depends on third-party API uptime. If the selected model is unavailable, try another model from the sidebar.")
 
-    # Optionally, show a test similarity matrix
+    # Optionally, show a test similarity matrix.
     if st.button("Run Similarity Test"):
         test_similarity()
 
@@ -278,8 +275,8 @@ def main():
                     jd_emb = get_embedding_online(jd_text)
                     resume_emb = get_embedding_online(resume_text)
                 else:
-                    jd_emb = get_embedding_offline(jd_text)
-                    resume_emb = get_embedding_offline(resume_text)
+                    jd_emb = get_embedding_on_demand(jd_text)
+                    resume_emb = get_embedding_on_demand(resume_text)
                 if jd_emb.size == 0 or resume_emb.size == 0:
                     st.error("Embedding generation failed. Please check your inputs and API configuration.")
                     return
