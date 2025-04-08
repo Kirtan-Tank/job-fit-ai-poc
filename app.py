@@ -7,7 +7,7 @@ from huggingface_hub import InferenceClient
 from sentence_transformers import SentenceTransformer
 
 # -----------------------------------------------------------------------------
-# Custom CSS for a LinkedIn Dark Blue Theme with Enhanced Readability and Dark Sidebar
+# Custom CSS for a LinkedIn-Inspired Theme with Enhanced Readability and Dark Sidebar
 # -----------------------------------------------------------------------------
 custom_css = """
 <style>
@@ -20,13 +20,13 @@ div.block-container {
     padding: 2rem;
 }
 h1, h2, h3, h4, h5, h6 {
-    color: #0077B5 !important;
+    color: #0d6efd !important;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.1);
 }
 p { color: #333333; }
 div.stButton > button {
-    background-color: #0077B5;
+    background-color: #0d6efd;
     color: #ffffff !important;
     border: none;
     border-radius: 10px;
@@ -35,7 +35,7 @@ div.stButton > button {
     box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.15);
 }
 div.stButton > button:hover {
-    background-color: #005582;
+    background-color: #0a58ca;
 }
 div[data-testid="stFileUploader"] {
     background-color: #ffffff;
@@ -46,7 +46,7 @@ div[data-testid="stFileUploader"] {
 }
 .st-expanderHeader {
     background-color: #BBDEFB;
-    color: #0077B5;
+    color: #0d6efd;
     border-radius: 8px;
     padding: 0.5rem;
 }
@@ -56,15 +56,15 @@ div[data-testid="stFileUploader"] {
     padding: 1rem;
     color: #333333;
 }
-/* Updated dark blue for sidebar using LinkedIn dark blue (#004182) */
+/* Updated dark blue for sidebar using #0d6efd */
 [data-testid="stSidebar"] {
-    background-color: #004182 !important;
+    background-color: #0d6efd !important;
 }
 [data-testid="stSidebar"] * {
     color: #ffffff !important;
 }
 [data-testid="stSidebar"] select {
-    background-color: #004182 !important;
+    background-color: #0d6efd !important;
     color: #ffffff !important;
     border: 1px solid #ffffff !important;
 }
@@ -72,7 +72,7 @@ div[data-testid="stFileUploader"] {
 .score-display {
     font-size: 48px;
     font-weight: bold;
-    color: #0077B5;
+    color: #0d6efd;
     text-align: center;
     margin-top: 20px;
 }
