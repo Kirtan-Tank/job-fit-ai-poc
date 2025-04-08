@@ -7,7 +7,7 @@ from huggingface_hub import InferenceClient
 from sentence_transformers import SentenceTransformer
 
 # -----------------------------------------------------------------------------
-# Custom CSS for a LinkedIn Blue Theme with Enhanced Readability and Dark Sidebar
+# Custom CSS for a LinkedIn Dark Blue Theme with Enhanced Readability and Dark Sidebar
 # -----------------------------------------------------------------------------
 custom_css = """
 <style>
@@ -56,14 +56,15 @@ div[data-testid="stFileUploader"] {
     padding: 1rem;
     color: #333333;
 }
+/* Updated dark blue for sidebar using LinkedIn dark blue (#004182) */
 [data-testid="stSidebar"] {
-    background-color: #0077B5 !important;
+    background-color: #004182 !important;
 }
 [data-testid="stSidebar"] * {
     color: #ffffff !important;
 }
 [data-testid="stSidebar"] select {
-    background-color: #0077B5 !important;
+    background-color: #004182 !important;
     color: #ffffff !important;
     border: 1px solid #ffffff !important;
 }
