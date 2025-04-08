@@ -12,16 +12,9 @@ from pinecone import Pinecone, ServerlessSpec
 from huggingface_hub import InferenceClient, whoami
 from sentence_transformers import SentenceTransformer
 
-# ────────────────────────────────────────────────────────────────────────────────
-# 0. Set offline flags so HF calls fail fast if no cache
-# ────────────────────────────────────────────────────────────────────────────────
-os.environ["TRANSFORMERS_OFFLINE"] = "1"
-os.environ["HF_DATASETS_OFFLINE"] = "1"
-os.environ["HF_HUB_OFFLINE"] = "1"
-
-# ────────────────────────────────────────────────────────────────────────────────
+# -------------------------------------------------------------------
 # 1. Startup Diagnostics
-# ────────────────────────────────────────────────────────────────────────────────
+# -------------------------------------------------------------------
 def test_hf_connectivity(host="huggingface.co", port=443, timeout=5):
     try:
         ctx = ssl.create_default_context()
@@ -60,9 +53,9 @@ with st.expander("🔧 Startup Diagnostic Report", expanded=True):
     ok, msg = test_local_cache()
     st.write("**3. Local Cache Inspection:**", "✅" if ok else "❌", msg)
 
-# ────────────────────────────────────────────────────────────────────────────────
-# Monkey Patch: Define init_empty_weights if not defined
-# ────────────────────────────────────────────────────────────────────────────────
+# -------------------------------------------------------------------
+# Monkey Patch: init_empty_weights fallback
+# -------------------------------------------------------------------
 try:
     init_empty_weights
 except NameError:
@@ -74,52 +67,30 @@ except NameError:
         import torch
         torch.init_empty_weights = init_empty_weights
 
-# ────────────────────────────────────────────────────────────────────────────────
-# Custom CSS Theme 
-# ────────────────────────────────────────────────────────────────────────────────
+# -------------------------------------------------------------------
+# Custom CSS Theme
+# -------------------------------------------------------------------
 custom_css = """
 <style>
-/* Gradient background and modern look */
 body, .stApp { background: linear-gradient(135deg, #f2e8ff, #ffeef9) !important; color: #333333; }
 div.block-container { background: transparent !important; padding: 2rem; }
-h1, h2, h3, h4, h5, h6 {
-    color: #4a148c !important;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.1);
-}
+h1, h2, h3, h4, h5, h6 { color: #4a148c !important; font-family: 'Segoe UI', sans-serif; text-shadow: 1px 1px 2px rgba(0,0,0,0.1); }
 p { color: #333333; }
-div.stButton > button {
-    background-color: #8e6bbf; color: #ffffff !important;
-    border: none; border-radius: 10px; padding: 0.7em 1.2em;
-    font-size: 16px; box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.15);
-}
+div.stButton > button { background-color: #8e6bbf; color: #ffffff !important; border: none; border-radius: 10px; padding: 0.7em 1.2em; font-size: 16px; box-shadow: 2px 2px 5px rgba(0,0,0,0.15); }
 div.stButton > button:hover { background-color: #7a5aa9; }
-div[data-testid="stFileUploader"] {
-    background-color: #ffffff; border: 2px dashed #a393d9;
-    border-radius: 10px; padding: 1rem; color: #333333;
-}
-.st-expanderHeader {
-    background-color: #d1c4e9; color: #4a148c;
-    border-radius: 8px; padding: 0.5rem;
-}
-.st-expanderContent {
-    background-color: #f3e5f5; border-radius: 8px;
-    padding: 1rem; color: #333333;
-}
+div[data-testid="stFileUploader"] { background-color: #ffffff; border: 2px dashed #a393d9; border-radius: 10px; padding: 1rem; color: #333333; }
+.st-expanderHeader { background-color: #d1c4e9; color: #4a148c; border-radius: 8px; padding: 0.5rem; }
+.st-expanderContent { background-color: #f3e5f5; border-radius: 8px; padding: 1rem; color: #333333; }
 [data-testid="stSidebar"] { background-color: #2e003e !important; }
 [data-testid="stSidebar"] * { color: #ffffff !important; }
-[data-testid="stSidebar"] select {
-    background-color: #2e003e !important;
-    color: #ffffff !important;
-    border: 1px solid #ffffff !important;
-}
+[data-testid="stSidebar"] select { background-color: #2e003e !important; color: #ffffff !important; border: 1px solid #ffffff !important; }
 </style>
 """
 st.markdown(custom_css, unsafe_allow_html=True)
 
-# ────────────────────────────────────────────────────────────────────────────────
+# -------------------------------------------------------------------
 # Sidebar: Mode and Model Selection
-# ────────────────────────────────────────────────────────────────────────────────
+# -------------------------------------------------------------------
 mode = st.sidebar.radio("Select Mode", ["Online", "On-Demand"])
 if mode == "Online":
     st.sidebar.markdown(
@@ -142,14 +113,30 @@ else:
     )
     MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
     on_demand_status = st.sidebar.empty()
-    on_demand_status.info("Loading model from cache...")
 
     @st.cache_resource(show_spinner=False)
     def load_on_demand_model() -> SentenceTransformer:
-        # Will fail fast if not in cache
+        cache_root = pathlib.Path.home() / ".cache" / "huggingface" / "hub"
+        model_folder = cache_root / MODEL_NAME.replace("/", "--")
+        # If not cached, temporarily allow online fetch:
+        if not (model_folder / "config.json").exists():
+            on_demand_status.info("Model not in cache—downloading from HF Hub…")
+            # Remove offline flags
+            os.environ.pop("HF_HUB_OFFLINE", None)
+            os.environ.pop("TRANSFORMERS_OFFLINE", None)
+            model = SentenceTransformer(MODEL_NAME)
+            # Re-enable offline mode
+            os.environ["HF_HUB_OFFLINE"] = "1"
+            os.environ["TRANSFORMERS_OFFLINE"] = "1"
+            return model
+        # Otherwise load from cache only
         return SentenceTransformer(MODEL_NAME)
 
-    with st.spinner("Loading model from cache..."):
+    # Ensure offline mode flags are set for all subsequent imports
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
+
+    with st.spinner("Loading model…"):
         try:
             on_demand_model = load_on_demand_model()
             on_demand_status.success("Model loaded successfully!")
@@ -157,9 +144,9 @@ else:
             on_demand_status.error(f"Model load failed: {e}")
             st.stop()
 
-# ────────────────────────────────────────────────────────────────────────────────
-# Pinecone Setup 
-# ────────────────────────────────────────────────────────────────────────────────
+# -------------------------------------------------------------------
+# Pinecone Setup
+# -------------------------------------------------------------------
 HF_API_KEY = st.secrets["general"]["HF_API_KEY"]
 PINECONE_API_KEY = st.secrets["general"]["PINECONE_API_KEY"]
 PINECONE_ENV = st.secrets["general"]["PINECONE_ENV"]
@@ -169,157 +156,129 @@ DESIRED_DIMENSION = 384
 
 pc = Pinecone(api_key=PINECONE_API_KEY)
 spec = ServerlessSpec(cloud="aws", region=PINECONE_ENV)
-existing_indexes = pc.list_indexes().names()
-if INDEX_NAME in existing_indexes:
+existing = pc.list_indexes().names()
+if INDEX_NAME in existing:
     desc = pc.describe_index(INDEX_NAME)
     if desc.dimension != DESIRED_DIMENSION:
-        st.warning(
-            f"Index dimension ({desc.dimension}) does not match desired dimension ({DESIRED_DIMENSION}). Recreating index."
-        )
+        st.warning(f"Index dimension mismatch; recreating.")
         pc.delete_index(INDEX_NAME)
         pc.create_index(name=INDEX_NAME, dimension=DESIRED_DIMENSION, metric="cosine", spec=spec)
 else:
     pc.create_index(name=INDEX_NAME, dimension=DESIRED_DIMENSION, metric="cosine", spec=spec)
 index = pc.Index(INDEX_NAME)
 
-# ────────────────────────────────────────────────────────────────────────────────
+# -------------------------------------------------------------------
 # Utility Functions
-# ────────────────────────────────────────────────────────────────────────────────
+# -------------------------------------------------------------------
 @st.cache_data(show_spinner=False)
 def extract_text(file) -> str:
     if file is None:
         return ""
-    file_bytes = file.read()
+    data = file.read()
     file.seek(0)
     if file.name.lower().endswith(".pdf"):
         try:
             import PyPDF2
-
-            pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
-            text = ""
-            for page in pdf_reader.pages:
-                page_text = page.extract_text()
-                if page_text:
-                    text += page_text + "\n"
-            return text.strip()
+            reader = PyPDF2.PdfReader(io.BytesIO(data))
+            return "\n".join(p.extract_text() or "" for p in reader.pages)
         except Exception as e:
-            st.error(f"Error processing PDF: {e}")
+            st.error(f"PDF error: {e}")
             return ""
-    elif file.name.lower().endswith(".docx"):
+    if file.name.lower().endswith(".docx"):
         try:
             import docx
-
-            doc = docx.Document(io.BytesIO(file_bytes))
-            text = "\n".join([para.text for para in doc.paragraphs])
-            return text.strip()
+            doc = docx.Document(io.BytesIO(data))
+            return "\n".join(p.text for p in doc.paragraphs)
         except Exception as e:
-            st.error(f"Error processing DOCX: {e}")
+            st.error(f"DOCX error: {e}")
             return ""
-    else:
-        try:
-            return file_bytes.decode("utf-8")
-        except Exception as e:
-            st.error(f"Error decoding text file: {e}")
-            return ""
+    try:
+        return data.decode("utf-8")
+    except Exception as e:
+        st.error(f"Text decode error: {e}")
+        return ""
 
 @st.cache_data(show_spinner=False)
 def get_embedding_online(text: str) -> np.ndarray:
     client = InferenceClient(api_key=HF_API_KEY)
     try:
-        result = client.feature_extraction(text, model=MODEL_NAME)
-        arr = np.array(result)
-        if arr.ndim == 2:
-            return arr.mean(axis=0)
-        return arr
+        out = client.feature_extraction(text, model=MODEL_NAME)
+        arr = np.array(out)
+        return arr.mean(axis=0) if arr.ndim == 2 else arr
     except Exception as e:
-        if "503" in str(e):
-            st.error("Selected model temporarily unavailable. Try again later.")
-        else:
-            st.error(f"Online embedding error: {e}")
+        st.error(f"Online embed error: {e}")
         return np.array([])
 
 def get_embedding_on_demand(text: str) -> np.ndarray:
     try:
         arr = np.array(on_demand_model.encode(text))
-        if arr.ndim == 2:
-            return arr.mean(axis=0)
-        return arr
+        return arr.mean(axis=0) if arr.ndim == 2 else arr
     except Exception as e:
-        st.error(f"On‑demand embedding error: {e}")
+        st.error(f"On‑demand embed error: {e}")
         return np.array([])
 
-def compute_fit_score(emb1: np.ndarray, emb2: np.ndarray) -> float:
-    sim = cosine_similarity(emb1.reshape(1, -1), emb2.reshape(1, -1))[0][0]
+def compute_fit_score(a: np.ndarray, b: np.ndarray) -> float:
+    sim = cosine_similarity(a.reshape(1, -1), b.reshape(1, -1))[0][0]
     return ((sim + 1) / 2) * 100
 
-def upsert_resume(resume_id: str, resume_emb: np.ndarray):
-    index.upsert(vectors=[(resume_id, resume_emb.tolist())])
+def upsert_resume(resume_id: str, emb: np.ndarray):
+    index.upsert(vectors=[(resume_id, emb.tolist())])
 
-def query_index(query_emb: np.ndarray, top_k: int = 1):
-    return index.query(vector=query_emb.tolist(), top_k=top_k)
+def query_index(emb: np.ndarray, top_k: int = 1):
+    return index.query(vector=emb.tolist(), top_k=top_k)
 
-# ────────────────────────────────────────────────────────────────────────────────
-# Streamlit User Interface
-# ────────────────────────────────────────────────────────────────────────────────
+# -------------------------------------------------------------------
+# Main App UI
+# -------------------------------------------------------------------
 def main():
     st.title("Job Fit Score Calculator")
     st.write("Upload a job description and a resume to compute a semantic fit score.")
     st.warning("If the model isn’t loading, check the diagnostic report above.")
 
     if st.button("Run Similarity Test"):
-        test_sents = [
-            "That is a happy person",
-            "That is a happy dog",
-            "That is a very happy person",
-            "Today is a sunny day",
-        ]
+        sents = ["That is a happy person", "That is a happy dog", "That is a very happy person", "Today is a sunny day"]
         emb = (
-            SentenceTransformer(MODEL_NAME).encode(test_sents)
+            SentenceTransformer(MODEL_NAME).encode(sents)
             if mode == "Online"
-            else on_demand_model.encode(test_sents)
+            else on_demand_model.encode(sents)
         )
         sims = cosine_similarity(emb)
         st.write("Similarity matrix:", sims)
 
     st.subheader("Upload Job Description")
-    jd_file = st.file_uploader("Job Description (PDF/DOCX/TXT)", type=["pdf", "docx", "txt"], key="jd")
+    jd = st.file_uploader("JD (PDF/DOCX/TXT)", type=["pdf", "docx", "txt"], key="jd")
     st.subheader("Upload Resume/CV")
-    resume_file = st.file_uploader("Resume/CV (PDF/DOCX/TXT)", type=["pdf", "docx", "txt"], key="resume")
+    cv = st.file_uploader("Resume (PDF/DOCX/TXT)", type=["pdf", "docx", "txt"], key="resume")
 
-    if jd_file:
+    if jd:
         with st.expander("Extracted JD Text"):
-            st.write(extract_text(jd_file))
-    if resume_file:
+            st.write(extract_text(jd))
+    if cv:
         with st.expander("Extracted Resume Text"):
-            st.write(extract_text(resume_file))
+            st.write(extract_text(cv))
 
     if st.button("Calculate Fit Score"):
-        if not (jd_file and resume_file):
+        if not (jd and cv):
             st.error("Please upload both JD and Resume.")
             return
-        jd_text = extract_text(jd_file)
-        resume_text = extract_text(resume_file)
-        if not jd_text or not resume_text:
-            st.error("Failed to extract text from one of the files.")
+        jd_txt, cv_txt = extract_text(jd), extract_text(cv)
+        if not jd_txt or not cv_txt:
+            st.error("Text extraction failed.")
             return
 
-        if mode == "Online":
-            jd_emb = get_embedding_online(jd_text)
-            resume_emb = get_embedding_online(resume_text)
-        else:
-            jd_emb = get_embedding_on_demand(jd_text)
-            resume_emb = get_embedding_on_demand(resume_text)
+        emb_jd = get_embedding_online(jd_txt) if mode == "Online" else get_embedding_on_demand(jd_txt)
+        emb_cv = get_embedding_online(cv_txt) if mode == "Online" else get_embedding_on_demand(cv_txt)
 
-        if jd_emb.size == 0 or resume_emb.size == 0:
+        if emb_jd.size == 0 or emb_cv.size == 0:
             st.error("Embedding generation failed.")
             return
 
-        score = compute_fit_score(resume_emb, jd_emb)
+        score = compute_fit_score(emb_cv, emb_jd)
         st.success(f"Job Fit Score: {score:.2f}%")
 
-        upsert_resume("resume_1", resume_emb)
+        upsert_resume("resume_1", emb_cv)
         with st.expander("Pinecone Query Result"):
-            st.write(query_index(jd_emb, top_k=1))
+            st.write(query_index(emb_jd, top_k=1))
 
 if __name__ == "__main__":
     main()
