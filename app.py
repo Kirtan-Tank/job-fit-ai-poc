@@ -6,7 +6,7 @@ import pathlib
 import streamlit as st
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
-from huggingface_hub import InferenceClient, whoami, snapshot_download
+from huggingface_hub import whoami
 from sentence_transformers import SentenceTransformer
 from pinecone import Pinecone, ServerlessSpec
 
@@ -32,19 +32,12 @@ def test_hf_token():
     except Exception as e:
         return False, f"Token error: {e}"
 
-def test_local_cache(model_id="sentence-transformers/all-MiniLM-L6-v2"):
-    cache_root = pathlib.Path.home() / ".cache" / "huggingface" / "hub"
-    model_folder = cache_root / model_id.replace("/", "--")
-    expected = ["config.json", "pytorch_model.bin"]
-    missing = [f for f in expected if not (model_folder / f).exists()]
-    return (False, f"Missing: {missing}") if missing else (True, f"Cached at {model_folder}")
-
 st.set_page_config(page_title="Startup Diagnostics", layout="wide")
 with st.expander("🔧 Startup Diagnostic Report", expanded=True):
-    st.write("Run diagnostics for connectivity, auth, and cache issues.")
+    st.write("Run diagnostics for connectivity and auth issues.")
     for label, func in zip(
-        ["HF Reachability", "HF Token", "Local Cache"],
-        [test_hf_connectivity, test_hf_token, test_local_cache]
+        ["HF Reachability", "HF Token"],
+        [test_hf_connectivity, test_hf_token]
     ):
         ok, msg = func()
         st.write(f"**{label}:**", "✅" if ok else "❌", msg)
@@ -52,7 +45,7 @@ with st.expander("🔧 Startup Diagnostic Report", expanded=True):
 # -------------------------------------------------------------------
 # UI Theme
 # -------------------------------------------------------------------
-st.markdown(open("style.css").read(), unsafe_allow_html=True)  # Externalize CSS for clarity
+st.markdown(open("style.css").read(), unsafe_allow_html=True)
 
 # -------------------------------------------------------------------
 # Sidebar Config
@@ -76,13 +69,7 @@ else:
 
     @st.cache_resource(show_spinner=False)
     def load_model():
-        path = snapshot_download(
-            repo_id=MODEL_NAME,
-            token=os.environ.get("HUGGINGFACE_HUB_TOKEN", None),
-            local_dir_use_symlinks=False,
-            resume_download=True,
-        )
-        return SentenceTransformer(str(path))
+        return SentenceTransformer(MODEL_NAME)
 
     with st.spinner("Loading model..."):
         try:
@@ -130,6 +117,7 @@ def extract_text(file) -> str:
 @st.cache_data(show_spinner=False)
 def get_embedding_online(text: str) -> np.ndarray:
     try:
+        from huggingface_hub import InferenceClient
         client = InferenceClient(api_key=HF_API_KEY)
         out = client.feature_extraction(text, model=MODEL_NAME)
         arr = np.array(out)
@@ -163,11 +151,9 @@ def main():
     st.write("Upload a JD and a resume to compute fit.")
 
     if st.button("Run Similarity Test"):
-        sents = ["happy person", "happy dog", "very happy person", "sunny day"]
-        emb = (
-            SentenceTransformer(MODEL_NAME).encode(sents)
-            if mode == "Online" else on_demand_model.encode(sents)
-        )
+        sents = ["That is a happy person", "That is a happy dog", "That is a very happy person", "Today is a sunny day"]
+        model = SentenceTransformer(MODEL_NAME) if mode == "Online" else on_demand_model
+        emb = model.encode(sents)
         st.write("Similarity matrix:", cosine_similarity(emb))
 
     jd_file = st.file_uploader("Job Description", type=["pdf", "docx", "txt"], key="jd")
